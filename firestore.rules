@@ -1,0 +1,189 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //
+    // Collection: trips
+    // Document ID: {tripId}
+    // Fields:
+    //   - title: string (required, < 100 chars)
+    //   - description: string (optional, < 1000 chars)
+    //   - startDate: string (optional, ISO 8601)
+    //   - endDate: string (optional, ISO 8601)
+    //   - ownerId: string (required, immutable)
+    //   - collaboratorIds: list of strings (required, < 50 items)
+    //   - flightCost: number (optional)
+    //   - createdAt: string (required, immutable)
+    //
+    // Collection: trips/{tripId}/items
+    // Document ID: {itemId}
+    // Fields:
+    //   - tripId: string (required, immutable)
+    //   - type: string (required, enum: location, flight, accommodation, activity, transport, train)
+    //   - title: string (required, < 100 chars)
+    //   - description: string (optional, < 2000 chars)
+    //   - startTime: string (optional, ISO 8601)
+    //   - endTime: string (optional, ISO 8601)
+    //   - isAllDay: bool (optional)
+    //   - locationName: string (optional, < 200 chars)
+    //   - lat: number (optional)
+    //   - lng: number (optional)
+    //   - bookingReference: string (optional, < 100 chars)
+    //   - order: number (required)
+    //   - createdAt: string (required, immutable)
+    //
+    // Collection: trips/{tripId}/todos
+    // Document ID: {todoId}
+    // Fields:
+    //   - text: string (required, < 500 chars)
+    //   - completed: bool (required)
+    //   - order: number (required)
+    //   - createdAt: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is string &&
+         request.resource.data[field].size() >= minLen &&
+         request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidOptionalDateString(field) {
+      return !(field in request.resource.data) || isValidDateString(request.resource.data[field]);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser() {
+      return hasRequiredFields(['uid', 'email']) &&
+             request.resource.data.uid == request.auth.uid &&
+             isValidStringLength('email', 3, 100) &&
+             isValidOptionalString('displayName', 0, 100) &&
+             isValidOptionalString('photoURL', 0, 500);
+    }
+
+    function isValidTrip() {
+      return hasRequiredFields(['title', 'ownerId', 'collaboratorIds', 'createdAt']) &&
+             isValidStringLength('title', 1, 100) &&
+             isValidOptionalString('description', 0, 1000) &&
+             isValidOptionalDateString('startDate') &&
+             isValidOptionalDateString('endDate') &&
+             request.resource.data.collaboratorIds is list &&
+             request.resource.data.collaboratorIds.size() <= 50 &&
+             (!( 'flightCost' in request.resource.data ) || request.resource.data.flightCost is number) &&
+             isValidDateString(request.resource.data.createdAt);
+    }
+
+    function isValidTripItem(tripId) {
+      return hasRequiredFields(['tripId', 'type', 'title', 'order', 'createdAt']) &&
+             request.resource.data.tripId == tripId &&
+             request.resource.data.type in ['location', 'flight', 'accommodation', 'activity', 'transport', 'train'] &&
+             isValidStringLength('title', 1, 100) &&
+             isValidOptionalString('description', 0, 2000) &&
+             isValidOptionalDateString('startTime') &&
+             isValidOptionalDateString('endTime') &&
+             (!( 'isAllDay' in request.resource.data ) || request.resource.data.isAllDay is bool) &&
+             isValidOptionalString('locationName', 0, 200) &&
+             (!( 'lat' in request.resource.data ) || request.resource.data.lat is number) &&
+             (!( 'lng' in request.resource.data ) || request.resource.data.lng is number) &&
+             isValidOptionalString('bookingReference', 0, 100) &&
+             request.resource.data.order is number &&
+             isValidDateString(request.resource.data.createdAt);
+    }
+
+    function isValidTodo() {
+      return hasRequiredFields(['text', 'completed', 'order', 'createdAt']) &&
+             isValidStringLength('text', 1, 500) &&
+             request.resource.data.completed is bool &&
+             request.resource.data.order is number &&
+             isValidDateString(request.resource.data.createdAt);
+    }
+
+    function isTripCollaborator(tripId) {
+      let trip = get(/databases/$(database)/documents/trips/$(tripId));
+      return trip != null && (trip.data.ownerId == request.auth.uid || request.auth.uid in trip.data.collaboratorIds);
+    }
+
+    function isTripOwner(tripId) {
+      let trip = get(/databases/$(database)/documents/trips/$(tripId));
+      return trip != null && trip.data.ownerId == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser() && areImmutableFieldsUnchanged(['uid']);
+    }
+
+    match /trips/{tripId} {
+      allow read: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || request.auth.uid in resource.data.collaboratorIds);
+      allow create: if isAuthenticated() && isValidTrip() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || request.auth.uid in resource.data.collaboratorIds) && isValidTrip() && areImmutableFieldsUnchanged(['ownerId', 'createdAt']);
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+
+      match /items/{itemId} {
+        allow read: if isTripCollaborator(tripId);
+        allow create: if isTripCollaborator(tripId) && isValidTripItem(tripId);
+        allow update: if isTripCollaborator(tripId) && isValidTripItem(tripId) && areImmutableFieldsUnchanged(['tripId', 'createdAt']);
+        allow delete: if isTripCollaborator(tripId);
+      }
+
+      match /todos/{todoId} {
+        allow read: if isTripCollaborator(tripId);
+        allow create: if isTripCollaborator(tripId) && isValidTodo();
+        allow update: if isTripCollaborator(tripId) && isValidTodo() && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isTripCollaborator(tripId);
+      }
+    }
+  }
+}

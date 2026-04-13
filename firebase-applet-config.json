@@ -1,0 +1,10 @@
+{
+  "projectId": "REDACTED_PROJECT_ID",
+  "appId": "REDACTED_FIREBASE_APP_ID",
+  "apiKey": "REDACTED_GOOGLE_API_KEY",
+  "authDomain": "REDACTED.firebaseapp.com",
+  "firestoreDatabaseId": "REDACTED_FIRESTORE_DB_ID",
+  "storageBucket": "REDACTED.firebasestorage.app",
+  "messagingSenderId": "413783328841",
+  "measurementId": ""
+}
