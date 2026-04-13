@@ -131,7 +131,8 @@ function AppContent() {
             >
               <h1 className="text-2xl font-bold tracking-tight mb-2">Urlaubsplaner</h1>
               <p className="text-sm text-muted-foreground leading-relaxed mb-7">
-                Plane Reisen, arbeite mit Freunden zusammen und behalte alle Buchungen im Blick.
+                Plane Reisen, arbeite mit Freunden zusammen und behalte alle Buchungen im Blick. Zur Nutzung meldest du dich
+                über <span className="text-foreground/80 font-medium">Supabase Auth</span> an.
               </p>
             </motion.div>
 
@@ -153,7 +154,7 @@ function AppContent() {
                 boxShadow: '0 2px 12px oklch(0.24 0.030 255 / 20%)',
               }}
             >
-              Mit Google anmelden
+              Anmelden
             </motion.button>
           </div>
         </motion.div>

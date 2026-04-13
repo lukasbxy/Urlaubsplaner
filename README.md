@@ -4,7 +4,7 @@ Web-App zum Planen von Reisen und Urlauben: Trips anlegen, Stationen und Buchung
 
 ## Funktionen
 
-- **Google-Anmeldung** über Supabase Auth (`signInWithOAuth` mit Provider `google`)
+- **Anmeldung** über **Supabase Auth** (OAuth-Weiterleitung; konkreten Anbieter in der Supabase-Konsole unter Authentication einrichten)
 - **Dashboard** mit Übersicht der eigenen und geteilten Trips
 - **Trip-Detailansicht** mit sortierbaren Einträgen (Drag-and-Drop), Kostenfeldern (Flug, Zug, Transport) und To-dos
 - **Eintragstypen**: z. B. Ort, Flug, Unterkunft, Aktivität, Transport, Zug (mit optionalen Koordinaten, Zeiten, Buchungsreferenzen, Anhängen)
@@ -56,7 +56,7 @@ Lege eine lokale Datei **`.env`** oder **`.env.local`** an (Vite lädt `VITE_*` 
    - `20260413123651_create_tables.sql` legt `trips`, `items`, `todos` an und aktiviert RLS inkl. Policies.
    - `20260413124846_remove_rls.sql` **deaktiviert RLS** (nur sinnvoll für unkritische Demos).
    - `20260413200000_restore_rls.sql` **stellt RLS und Policies wieder her** (empfohlen für öffentliche Deployments).
-3. **Authentication:** Provider **Google** konfigurieren. **Redirect-URLs** müssen exakt passen, z. B.:
+3. **Authentication:** Gewünschte Anmeldeverfahren in Supabase aktivieren (z. B. OAuth-Provider oder Magic Link). **Redirect-URLs** müssen exakt passen, z. B.:
    - lokal: `http://localhost:3000`
    - GitHub Pages: `https://<user>.github.io/<repo>/` (ohne Pfadfragment, je nach Supabase-UI ggf. mit abschließendem `/`)
 4. Client-seitig `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` setzen.

@@ -4,7 +4,7 @@ Kurzanleitung für menschliche Entwickler und KI-Assistenten, die an diesem Repo
 
 ## Was ist das Projekt?
 
-**Urlaubsplaner** ist eine React- und Vite-basierte Single-Page-App zum Planen von Reisen. Daten liegen in **Supabase** (PostgreSQL). Authentifizierung erfolgt über **Supabase Auth** mit **Google OAuth**. Es gibt **keine Firebase-Integration** mehr: Client, Dependencies und Konfiguration beziehen sich ausschließlich auf Supabase.
+**Urlaubsplaner** ist eine React- und Vite-basierte Single-Page-App zum Planen von Reisen. Daten liegen in **Supabase** (PostgreSQL). Authentifizierung erfolgt über **Supabase Auth** (`signInWithOAuth`; der Anbieter wird in der Supabase-Konsole konfiguriert). Es gibt **keine Firebase-Integration** mehr: Client, Dependencies und Konfiguration beziehen sich ausschließlich auf Supabase.
 
 ## Dev-Server und Workflow
 
@@ -54,7 +54,7 @@ Vite liest Umgebungsvariablen **beim Build** ein und ersetzt `import.meta.env.VI
 |----------------|--------|
 | `src/lib/supabase.ts` | Einziger Supabase-Client (`createClient`), Typen für `trips`, `items`, `todos` |
 | `src/components/AuthProvider.tsx` | Session, 24h-Wall-Clock-Logout, `getSession` / `onAuthStateChange` |
-| `src/App.tsx` | Login (`signInWithOAuth` Google), Logout, Dashboard vs. TripView |
+| `src/App.tsx` | Login (`signInWithOAuth`), Logout, Dashboard vs. TripView |
 | `supabase/migrations/` | Schema; `20260413200000_restore_rls.sql` aktiviert RLS für Produktion wieder |
 | `.env.example` | Vorlage für `VITE_*` und weitere Variablen |
 
