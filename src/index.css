@@ -116,6 +116,13 @@
                         );
 }
 
+/* Etwas kompaktere UI auf kleinen Viewports (höhere Informationsdichte) */
+@media (max-width: 639px) {
+    :root {
+        --radius: 0.72rem;
+    }
+}
+
 @layer base {
     * {
         @apply border-border outline-ring/50;

@@ -77,7 +77,7 @@ const FieldLabel = ({ children }: { children: React.ReactNode }) => (
 const Field = ({ children }: { children: React.ReactNode }) => (
   <div className="space-y-1.5">{children}</div>
 );
-const inputCls = "h-9 rounded-xl border-border bg-white text-sm focus:ring-1 focus:ring-foreground/20";
+const inputCls = "h-8 sm:h-9 rounded-lg sm:rounded-xl border-border bg-white text-sm focus:ring-1 focus:ring-foreground/20";
 
 export function TripView({ tripId, onBack }: { tripId: string; onBack: () => void }) {
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -517,11 +517,11 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
   /* ── Item form ── */
   const ItemForm = ({ onSubmit, label }: { onSubmit: (e: React.FormEvent) => void; label: string }) => (
-    <form onSubmit={onSubmit} className="space-y-4 pt-2">
-      <div className="flex items-center justify-between bg-muted/60 rounded-xl p-3">
+    <form onSubmit={onSubmit} className="space-y-3 sm:space-y-4 pt-2">
+      <div className="flex items-center justify-between bg-muted/60 rounded-lg sm:rounded-xl p-2.5 sm:p-3">
         <div>
-          <p className="text-sm font-medium">Ganztägig</p>
-          <p className="text-xs text-muted-foreground">Nur Datum anzeigen</p>
+          <p className="text-xs sm:text-sm font-medium">Ganztägig</p>
+          <p className="text-[11px] sm:text-xs text-muted-foreground">Nur Datum anzeigen</p>
         </div>
         <Switch checked={newItemAllDay} onCheckedChange={setNewItemAllDay} />
       </div>
@@ -543,7 +543,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
         <FieldLabel>Titel</FieldLabel>
         <Input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} required className={inputCls} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <Field>
           <FieldLabel>{newItemType === 'flight' || newItemType === 'transport' || newItemType === 'train' ? 'Start' : 'Ort'}</FieldLabel>
           <Input value={newItemLocation} onChange={e => setNewItemLocation(e.target.value)} className={inputCls} />
@@ -555,7 +555,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
           </Field>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <Field>
           <FieldLabel>{newItemType === 'accommodation' ? 'Check-in' : 'Start'}</FieldLabel>
           <Input type={newItemAllDay ? 'date' : 'datetime-local'} value={newItemStartTime} onChange={e => setNewItemStartTime(e.target.value)} className={inputCls} />
@@ -565,7 +565,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
           <Input type={newItemAllDay ? 'date' : 'datetime-local'} value={newItemEndTime} onChange={e => setNewItemEndTime(e.target.value)} className={inputCls} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <Field>
           <FieldLabel>Kosten (€)</FieldLabel>
           <Input type="number" step="0.01" value={newItemCost} onChange={e => setNewItemCost(e.target.value)} placeholder="0.00" className={inputCls} />
@@ -592,7 +592,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
       </Field>
       <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
         type="submit" disabled={isSaving}
-        className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+        className="w-full py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50"
         style={{ background: 'var(--gradient-primary)', boxShadow: '0 2px 10px oklch(0.24 0.030 255 / 18%)' }}>
         {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Wird gespeichert…</> : label}
       </motion.button>
@@ -604,12 +604,12 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
     <motion.button
       whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
       onClick={() => changeTab(k)}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+      className="flex items-center gap-1 sm:gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs font-medium transition-colors"
       style={activeTab === k
         ? { background: 'var(--gradient-primary)', color: 'white' }
         : { color: 'oklch(0.52 0.012 255)' }}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
       {label}
     </motion.button>
   );
@@ -627,17 +627,17 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* ── Header ── */}
-      <header className="glass-header sticky top-0 z-50 px-4 py-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
+      <header className="glass-header sticky top-0 z-50 px-3 py-2 sm:px-4 sm:py-2.5">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 min-w-0 sm:gap-2.5">
             <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }}
               onClick={onBack}
-              className="w-8 h-8 rounded-xl border border-border bg-white flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
-              <ArrowLeft className="h-4 w-4" />
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl border border-border bg-white flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+              <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </motion.button>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <h1 className="text-sm font-semibold truncate max-w-[160px] lg:max-w-xs">{trip.title}</h1>
+                <h1 className="text-[13px] sm:text-sm font-semibold truncate max-w-[min(200px,calc(100vw-10.5rem))] lg:max-w-xs">{trip.title}</h1>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <motion.button whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }} 
                     onClick={() => setIsEditTripOpen(true)}
@@ -669,7 +669,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             <AnimatePresence>
               {!isOnline && (
                 <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }}
@@ -685,15 +685,15 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
             <Dialog open={isAddItemOpen} onOpenChange={v => { setIsAddItemOpen(v); if (!v) resetForm(); }}>
               <DialogTrigger render={
                 <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 py-1 sm:px-3.5 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-semibold text-white"
                   style={{ background: 'var(--gradient-primary)', boxShadow: '0 2px 8px oklch(0.24 0.030 255 / 18%)' }}>
-                  <Plus className="h-3.5 w-3.5" />
-                  <span className="hidden sm:block">Hinzufügen</span>
+                  <Plus className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                  <span className="hidden sm:inline">Hinzufügen</span>
                 </motion.button>
               } />
-              <DialogContent className="glass-card border-0 p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
+              <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
                 <DialogHeader>
-                  <DialogTitle className="text-base font-semibold">Zum Reiseplan hinzufügen</DialogTitle>
+                  <DialogTitle className="text-sm sm:text-base font-semibold">Zum Reiseplan hinzufügen</DialogTitle>
                 </DialogHeader>
                 {ItemForm({ onSubmit: handleAddItem, label: "Hinzufügen" })}
               </DialogContent>
@@ -701,9 +701,9 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
             {/* Edit dialog */}
             <Dialog open={isEditItemOpen} onOpenChange={v => { setIsEditItemOpen(v); if (!v) { setEditingItem(null); resetForm(); } }}>
-              <DialogContent className="glass-card border-0 p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
+              <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
                 <DialogHeader>
-                  <DialogTitle className="text-base font-semibold">Eintrag bearbeiten</DialogTitle>
+                  <DialogTitle className="text-sm sm:text-base font-semibold">Eintrag bearbeiten</DialogTitle>
                 </DialogHeader>
                 {ItemForm({ onSubmit: handleEditItem, label: "Änderungen speichern" })}
               </DialogContent>
@@ -711,11 +711,11 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
             {/* Edit Trip dialog */}
             <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
-              <DialogContent className="glass-card border-0 p-6 max-w-md shadow-lg">
+              <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-md shadow-lg">
                 <DialogHeader>
-                  <DialogTitle className="text-base font-semibold">Reise anpassen</DialogTitle>
+                  <DialogTitle className="text-sm sm:text-base font-semibold">Reise anpassen</DialogTitle>
                 </DialogHeader>
-                <form onSubmit={handleUpdateTrip} className="space-y-4 pt-2">
+                <form onSubmit={handleUpdateTrip} className="space-y-3 sm:space-y-4 pt-2">
                   <Field>
                     <FieldLabel>Name der Reise</FieldLabel>
                     <Input value={editTripTitle} onChange={e => setEditTripTitle(e.target.value)} required className={inputCls} />
@@ -726,7 +726,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                   </Field>
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                     type="submit" disabled={isSaving}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50"
                     style={{ background: 'var(--gradient-primary)', boxShadow: '0 2px 10px oklch(0.24 0.030 255 / 18%)' }}>
                     {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Wird gespeichert…</> : "Speichern"}
                   </motion.button>
@@ -744,7 +744,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
         <div className="w-full lg:w-[360px] xl:w-[400px] flex-shrink-0 flex flex-col border-r border-border bg-background relative">
 
           {/* Tab bar – desktop */}
-          <div className="hidden lg:flex gap-1 p-2 border-b border-border bg-background/95">
+          <div className="hidden lg:flex gap-1 p-1.5 border-b border-border bg-background/95">
             {TabBtn({ k: "timeline", icon: Navigation, label: "Plan" })}
             {TabBtn({ k: "todos", icon: ListTodo, label: "To-Do" })}
           </div>
@@ -760,12 +760,12 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                   initial="enter"
                   animate="center"
                   exit="exit"
-                  className="absolute inset-0 overflow-y-auto p-3 lg:p-4 pb-24 lg:pb-4"
+                  className="absolute inset-0 overflow-y-auto p-2.5 sm:p-3 lg:p-4 pb-20 lg:pb-4"
                 >
                   <DragDropContext onDragEnd={handleDragEnd}>
                     <Droppable droppableId="timeline">
                       {(provided) => (
-                        <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-1">
+                        <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-0.5 sm:space-y-1">
                           {processedItems.map((item, index) => {
                             const Icon = typeIcons[item.type] || MapPin;
                             const titleIsTbd = item.title.toLowerCase().includes('tbd');
@@ -774,8 +774,8 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                               <React.Fragment key={item.id}>
                                 {/* Day separator */}
                                 {dayLabel && (
-                                  <div className="flex items-center gap-2 pt-3 pb-1 first:pt-0">
-                                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                                  <div className="flex items-center gap-2 pt-2 pb-0.5 sm:pt-3 sm:pb-1 first:pt-0">
+                                    <span className="text-[10px] sm:text-[11px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                                       {dayLabel}
                                     </span>
                                     <div className="flex-1 h-px bg-border" />
@@ -795,20 +795,20 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                       style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
                                       onClick={() => setSelectedItemId(item.id)}
                                       className={
-                                        'glass-card p-3 cursor-pointer group ' +
+                                        'glass-card p-2.5 sm:p-3 cursor-pointer group ' +
                                         (titleIsTbd
                                           ? 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/45 dark:bg-orange-950/30'
                                           : '')
                                       }
                                     >
-                                      <div className="flex gap-2.5">
-                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 icon-${item.type}`}>
-                                          <Icon className="h-4 w-4" />
+                                      <div className="flex gap-2 sm:gap-2.5">
+                                        <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 icon-${item.type}`}>
+                                          <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-start justify-between gap-1">
                                             <div className="min-w-0">
-                                              <h4 className="text-sm font-semibold truncate leading-tight">{item.title}</h4>
+                                              <h4 className="text-[13px] sm:text-sm font-semibold truncate leading-tight">{item.title}</h4>
                                               {(() => {
                                                 const durLabel = getDurationLabel(item as TripItem);
                                                 const tr = transportRoutes[item.id];
@@ -875,9 +875,9 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                   </button>
                                                 } />
-                                                <DialogContent className="glass-card border-0 p-6 max-w-sm shadow-lg">
+                                                <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-sm shadow-lg">
                                                   <DialogHeader>
-                                                    <DialogTitle className="text-base font-semibold">Eintrag löschen?</DialogTitle>
+                                                    <DialogTitle className="text-sm sm:text-base font-semibold">Eintrag löschen?</DialogTitle>
                                                     <DialogDescription className="text-sm">
                                                       Möchtest du diesen Eintrag wirklich aus deiner Planung entfernen?
                                                     </DialogDescription>
@@ -923,10 +923,10 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                               )}
                                             </div>
                                           )}
-                                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                          <div className="mt-1 flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-0.5 sm:gap-y-1 text-[11px] sm:text-xs text-muted-foreground">
                                             {item.start_time && (
                                               <div className="flex items-start gap-1.5 mt-0.5">
-                                                <CalendarDays className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                                                <CalendarDays className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0 mt-0.5" />
                                                 <span>{formatDateRange(item.start_time, item.end_time, item.is_all_day)}</span>
                                               </div>
                                             )}
@@ -953,13 +953,13 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
                   {items.length === 0 && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
-                      className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                      <div className="w-12 h-12 rounded-2xl border border-dashed border-border flex items-center justify-center">
-                        <Navigation className="h-5 w-5 text-muted-foreground" />
+                      className="flex flex-col items-center justify-center py-12 sm:py-16 gap-2.5 sm:gap-3 text-center">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border border-dashed border-border flex items-center justify-center">
+                        <Navigation className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground">Reiseplan ist leer</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Füge deinen ersten Eintrag hinzu.</p>
+                        <p className="text-xs sm:text-sm font-medium text-muted-foreground">Reiseplan ist leer</p>
+                        <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">Füge deinen ersten Eintrag hinzu.</p>
                       </div>
                     </motion.div>
                   )}
@@ -974,25 +974,25 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                   initial="enter"
                   animate="center"
                   exit="exit"
-                  className="absolute inset-0 overflow-y-auto p-4 pb-24 lg:pb-4"
+                  className="absolute inset-0 overflow-y-auto p-3 sm:p-4 pb-20 lg:pb-4"
                 >
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'var(--gradient-primary)' }}>
-                      <ListTodo className="h-3.5 w-3.5 text-white" />
+                  <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                    <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg sm:rounded-xl flex items-center justify-center" style={{ background: 'var(--gradient-primary)' }}>
+                      <ListTodo className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-white" />
                     </div>
-                    <h2 className="text-sm font-semibold">To-Do Liste</h2>
+                    <h2 className="text-xs sm:text-sm font-semibold">To-Do Liste</h2>
                     {todos.length > 0 && (
-                      <span className="ml-auto text-xs text-muted-foreground">
+                      <span className="ml-auto text-[11px] sm:text-xs text-muted-foreground">
                         {todos.filter(t => t.completed).length}/{todos.length}
                       </span>
                     )}
                   </div>
 
-                  <form onSubmit={handleAddTodo} className="flex gap-2 mb-4">
+                  <form onSubmit={handleAddTodo} className="flex gap-1.5 sm:gap-2 mb-3 sm:mb-4">
                     <Input value={newTodoText} onChange={e => setNewTodoText(e.target.value)} placeholder="Neue Aufgabe…"
-                      className="flex-1 h-9 rounded-xl border-border bg-white text-sm" />
+                      className="flex-1 h-8 sm:h-9 rounded-lg sm:rounded-xl border-border bg-white text-sm" />
                     <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} type="submit"
-                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0"
+                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center text-white flex-shrink-0"
                       style={{ background: 'var(--gradient-primary)' }}>
                       <Plus className="h-4 w-4" />
                     </motion.button>
@@ -1001,7 +1001,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                   <DragDropContext onDragEnd={handleTodoDragEnd}>
                     <Droppable droppableId="todos">
                       {(provided) => (
-                        <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                        <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-1.5 sm:space-y-2">
                           {todos.map((todo, index) => (
                             <Draggable key={todo.id} draggableId={todo.id} index={index}>
                               {(provided, snapshot) => (
@@ -1013,12 +1013,12 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                   initial="hidden"
                                   animate="visible"
                                   style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
-                                  className="glass-card flex items-center gap-2.5 p-3 group"
+                                  className="glass-card flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 group"
                                 >
                                   <div {...provided.dragHandleProps} className="text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing transition-colors">
-                                    <GripVertical className="h-4 w-4" />
+                                    <GripVertical className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                   </div>
-                                  <div className="flex items-center gap-2.5 flex-1 cursor-pointer" onClick={() => toggleTodo(todo)}>
+                                  <div className="flex items-center gap-2 sm:gap-2.5 flex-1 cursor-pointer" onClick={() => toggleTodo(todo)}>
                                     <div className="w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-all duration-150"
                                       style={{ borderColor: todo.completed ? 'oklch(0.50 0.13 145)' : 'oklch(0.75 0.008 255)', background: todo.completed ? 'oklch(0.50 0.13 145)' : 'transparent' }}>
                                       <AnimatePresence>
@@ -1042,7 +1042,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                     ) : (
                                       <span 
                                         onClick={(e) => { e.stopPropagation(); setEditingTodoId(todo.id); setEditingTodoText(todo.text); }}
-                                        className={`text-sm transition-colors flex-1 py-0.5 ${todo.completed ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+                                        className={`text-[13px] sm:text-sm transition-colors flex-1 py-0.5 ${todo.completed ? 'line-through text-muted-foreground' : 'text-foreground'}`}
                                       >
                                         {todo.text}
                                       </span>
@@ -1065,11 +1065,11 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
                   {todos.length === 0 && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
-                      className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-                      <div className="w-12 h-12 rounded-2xl border border-dashed border-border flex items-center justify-center">
-                        <ListTodo className="h-5 w-5 text-muted-foreground" />
+                      className="flex flex-col items-center justify-center py-10 sm:py-12 gap-2.5 sm:gap-3 text-center">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border border-dashed border-border flex items-center justify-center">
+                        <ListTodo className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                       </div>
-                      <p className="text-sm text-muted-foreground">Keine Aufgaben vorhanden.</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">Keine Aufgaben vorhanden.</p>
                     </motion.div>
                   )}
                 </motion.div>
@@ -1093,8 +1093,8 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
           </div>
 
           {/* Mobile bottom tab nav */}
-          <div className="lg:hidden absolute bottom-5 left-1/2 -translate-x-1/2 z-50">
-            <div className="flex gap-1 p-1 bg-white rounded-full border border-border" style={{ boxShadow: '0 4px 20px oklch(0 0 0 / 10%)' }}>
+          <div className="lg:hidden absolute bottom-3 left-1/2 -translate-x-1/2 z-50 pb-[env(safe-area-inset-bottom,0px)]">
+            <div className="flex gap-0.5 sm:gap-1 p-0.5 sm:p-1 bg-white rounded-full border border-border" style={{ boxShadow: '0 4px 20px oklch(0 0 0 / 10%)' }}>
               {TabBtn({ k: "timeline", icon: Navigation, label: "Plan" })}
               {TabBtn({ k: "todos", icon: ListTodo, label: "To-Do" })}
               {TabBtn({ k: "map", icon: MapPin, label: "Karte" })}

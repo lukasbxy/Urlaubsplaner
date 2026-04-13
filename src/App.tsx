@@ -7,7 +7,14 @@ import { TripView } from './components/TripView';
 import { supabase } from './lib/supabase';
 import { appHomePath, parseTripIdFromPath, tripPath } from './lib/tripUrl';
 import { oauthRateLimitStatus, recordOAuthAttempt } from './lib/oauthRateLimit';
+import { Input } from './components/ui/input';
 import { Plane, WifiOff, LogOut, Compass } from 'lucide-react';
+
+function buildAuthRedirectUrl(): string {
+  const base = import.meta.env.BASE_URL;
+  const path = base.endsWith('/') ? base.slice(0, -1) : base;
+  return path ? `${window.location.origin}${path}` : window.location.origin;
+}
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -17,7 +24,11 @@ function AppContent() {
     typeof window !== 'undefined' ? parseTripIdFromPath() : null,
   );
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [oauthLimitMessage, setOauthLimitMessage] = useState<string | null>(null);
+  const [authLimitMessage, setAuthLimitMessage] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [magicLinkSending, setMagicLinkSending] = useState(false);
+  const [magicLinkError, setMagicLinkError] = useState<string | null>(null);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   useEffect(() => {
     const onPop = () => setSelectedTripId(parseTripIdFromPath());
@@ -56,23 +67,35 @@ function AppContent() {
     }
   };
 
-  const handleSignIn = async () => {
+  const handleSendMagicLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setMagicLinkError('Bitte eine E-Mail-Adresse eingeben.');
+      return;
+    }
     const limit = oauthRateLimitStatus();
     if (limit.ok === false) {
-      setOauthLimitMessage(
-        `Zu viele Anmeldeversuche. Bitte in etwa ${limit.retryAfterSec} Sekunden erneut versuchen.`
+      setAuthLimitMessage(
+        `Zu viele Anmeldeversuche. Bitte in etwa ${limit.retryAfterSec} Sekunden erneut versuchen.`,
       );
       return;
     }
-    setOauthLimitMessage(null);
+    setAuthLimitMessage(null);
+    setMagicLinkError(null);
+    setMagicLinkSent(false);
     recordOAuthAttempt();
-    const base = import.meta.env.BASE_URL;
-    const path = base.endsWith('/') ? base.slice(0, -1) : base;
-    const redirectTo = path ? `${window.location.origin}${path}` : window.location.origin;
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
+    setMagicLinkSending(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email: trimmed,
+      options: { emailRedirectTo: buildAuthRedirectUrl() },
     });
+    setMagicLinkSending(false);
+    if (error) {
+      setMagicLinkError(error.message);
+      return;
+    }
+    setMagicLinkSent(true);
   };
 
   const handleSignOut = async () => {
@@ -112,16 +135,16 @@ function AppContent() {
           transition={{ duration: 0.5, ease: EASE }}
           className="w-full max-w-sm"
         >
-          <div className="glass-card p-8 text-center">
+          <div className="glass-card p-5 sm:p-8 text-center">
             {/* Logo mark */}
             <motion.div
               initial={{ scale: 0.7, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.1, duration: 0.4, ease: EASE }}
-              className="mx-auto mb-6 w-14 h-14 rounded-2xl flex items-center justify-center"
+              className="mx-auto mb-4 sm:mb-6 w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center"
               style={{ background: 'var(--gradient-primary)', boxShadow: '0 4px 20px oklch(0.24 0.030 255 / 18%)' }}
             >
-              <Plane className="h-7 w-7 text-white" />
+              <Plane className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
             </motion.div>
 
             <motion.div
@@ -129,33 +152,66 @@ function AppContent() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.18, duration: 0.4 }}
             >
-              <h1 className="text-2xl font-bold tracking-tight mb-2">Urlaubsplaner</h1>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-7">
-                Plane Reisen, arbeite mit Freunden zusammen und behalte alle Buchungen im Blick. Zur Nutzung meldest du dich
-                über <span className="text-foreground/80 font-medium">Supabase Auth</span> an.
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight mb-1.5 sm:mb-2">Urlaubsplaner</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed mb-5 sm:mb-7">
+                Plane Reisen, arbeite mit Freunden zusammen und behalte alle Buchungen im Blick. Wir schicken dir einen
+                Anmeldelink per E-Mail (<span className="text-foreground/80 font-medium">Supabase Auth</span>).
               </p>
             </motion.div>
 
-            {oauthLimitMessage && (
+            {authLimitMessage && (
               <p className="mb-3 text-xs text-center text-amber-700 bg-amber-50 border border-amber-200/80 rounded-lg px-3 py-2">
-                {oauthLimitMessage}
+                {authLimitMessage}
               </p>
             )}
-            <motion.button
+
+            <motion.form
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.26, duration: 0.35 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleSignIn}
-              className="w-full py-2.5 px-5 rounded-xl text-sm font-semibold text-white transition-shadow"
-              style={{
-                background: 'var(--gradient-primary)',
-                boxShadow: '0 2px 12px oklch(0.24 0.030 255 / 20%)',
-              }}
+              onSubmit={handleSendMagicLink}
+              className="text-left space-y-2.5 sm:space-y-3"
             >
-              Anmelden
-            </motion.button>
+              <div className="space-y-1">
+                <label htmlFor="auth-email" className="text-[11px] sm:text-xs font-medium text-foreground">
+                  E-Mail
+                </label>
+                <Input
+                  id="auth-email"
+                  type="email"
+                  name="email"
+                  autoComplete="email"
+                  placeholder="name@beispiel.de"
+                  value={email}
+                  onChange={(ev) => setEmail(ev.target.value)}
+                  disabled={magicLinkSending}
+                  className="h-9 sm:h-10"
+                />
+              </div>
+              {magicLinkError && (
+                <p className="text-xs text-destructive" role="alert">
+                  {magicLinkError}
+                </p>
+              )}
+              {magicLinkSent && (
+                <p className="text-xs text-muted-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">
+                  Link ist unterwegs. Bitte Postfach und Spam prüfen. Der Link führt zurück in diese App.
+                </p>
+              )}
+              <motion.button
+                type="submit"
+                disabled={magicLinkSending}
+                whileHover={{ scale: magicLinkSending ? 1 : 1.02 }}
+                whileTap={{ scale: magicLinkSending ? 1 : 0.98 }}
+                className="w-full py-2 sm:py-2.5 px-4 sm:px-5 rounded-lg sm:rounded-xl text-sm font-semibold text-white transition-shadow disabled:opacity-60"
+                style={{
+                  background: 'var(--gradient-primary)',
+                  boxShadow: '0 2px 12px oklch(0.24 0.030 255 / 20%)',
+                }}
+              >
+                {magicLinkSending ? 'Sende Link…' : 'Anmeldelink senden'}
+              </motion.button>
+            </motion.form>
           </div>
         </motion.div>
       </div>
@@ -184,19 +240,19 @@ function AppContent() {
             transition={{ duration: 0.28, ease: EASE }}
           >
             {/* Header */}
-            <header className="glass-header sticky top-0 z-50 px-5 py-3">
+            <header className="glass-header sticky top-0 z-50 px-3 py-2 sm:px-5 sm:py-3">
               <div className="max-w-5xl mx-auto flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2 sm:gap-2.5">
                   <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center"
+                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-md sm:rounded-lg flex items-center justify-center"
                     style={{ background: 'var(--gradient-primary)' }}
                   >
-                    <Plane className="h-3.5 w-3.5 text-white" />
+                    <Plane className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-white" />
                   </div>
-                  <span className="font-semibold text-sm text-foreground">Urlaubsplaner</span>
+                  <span className="font-semibold text-xs sm:text-sm text-foreground">Urlaubsplaner</span>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <AnimatePresence>
                     {!isOnline && (
                       <motion.div
@@ -224,7 +280,7 @@ function AppContent() {
                     whileHover={{ scale: 1.04 }}
                     whileTap={{ scale: 0.96 }}
                     onClick={handleSignOut}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:border-foreground/15 transition-colors bg-white/60"
+                    className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:border-foreground/15 transition-colors bg-white/60"
                   >
                     <LogOut className="h-3.5 w-3.5" />
                     <span className="hidden sm:block">Abmelden</span>
