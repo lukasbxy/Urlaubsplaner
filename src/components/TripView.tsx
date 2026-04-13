@@ -799,11 +799,12 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                   </motion.div>
                                 )}
                                 <Draggable draggableId={item.id} index={index}>
-                                  {(provided, snapshot) => (
+                                  {(provided, snapshot) => {
+                                    const isSelected = selectedItemId === item.id;
+                                    return (
                                     <motion.div
                                       ref={provided.innerRef}
                                       {...(provided.draggableProps as any)}
-                                      {...(provided.dragHandleProps as any)}
                                       custom={index}
                                       variants={itemVariants}
                                       initial="hidden"
@@ -819,16 +820,27 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                         zIndex: snapshot.isDragging ? 50 : 'auto',
                                         boxShadow: snapshot.isDragging ? '0 8px 32px rgba(0,0,0,0.12)' : undefined,
                                       }}
-                                      onClick={() => setSelectedItemId(item.id)}
+                                      onClick={() => setSelectedItemId(isSelected ? null : item.id)}
                                       className={
-                                        'glass-card p-2.5 sm:p-3 cursor-pointer group transition-shadow duration-200 ' +
+                                        'glass-card p-2.5 sm:p-3 cursor-pointer group transition-all duration-200 ' +
                                         (snapshot.isDragging ? 'ring-2 ring-primary/30 scale-[1.02] ' : '') +
+                                        (isSelected ? 'ring-2 ring-primary/20 ' : '') +
                                         (titleIsTbd
                                           ? 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/45 dark:bg-orange-950/30'
                                           : '')
                                       }
                                     >
                                       <div className="flex gap-2 sm:gap-2.5">
+                                        {/* Drag handle – visible on hover (desktop) or when selected (mobile) */}
+                                        <div
+                                          {...(provided.dragHandleProps as any)}
+                                          className={
+                                            'flex items-center touch-none select-none text-muted-foreground/40 hover:text-muted-foreground transition-opacity -ml-1 ' +
+                                            (isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')
+                                          }
+                                        >
+                                          <GripVertical className="h-4 w-4" />
+                                        </div>
                                         <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 icon-${item.type}`}>
                                           <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                         </div>
@@ -879,7 +891,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                                 );
                                               })()}
                                             </div>
-                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                            <div className={'flex gap-1 transition-opacity flex-shrink-0 ' + (isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
                                               {item.file_data && (
                                                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                                                   onClick={e => { e.stopPropagation(); const w = window.open(); if (w) w.document.write(`<iframe src="${item.file_data}" frameborder="0" style="border:0;width:100%;height:100%"></iframe>`); }}
@@ -889,7 +901,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                               )}
                                               <button
                                                 onClick={(e) => { e.stopPropagation(); openEditDialog(item as TripItem); }}
-                                                className="p-1.5 rounded-lg border border-border bg-white text-muted-foreground hover:text-foreground hover:border-foreground/15 transition-colors"
+                                                className="p-1.5 sm:p-1.5 min-w-[28px] min-h-[28px] sm:min-w-0 sm:min-h-0 rounded-lg border border-border bg-white text-muted-foreground hover:text-foreground hover:border-foreground/15 transition-colors flex items-center justify-center"
                                               >
                                                 <Settings2 className="h-3.5 w-3.5" />
                                               </button>
@@ -897,7 +909,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                                 <DialogTrigger render={
                                                   <button
                                                     onClick={(e) => e.stopPropagation()}
-                                                    className="p-1.5 rounded-lg border border-border bg-white text-muted-foreground hover:text-destructive hover:border-destructive/30 transition-colors"
+                                                    className="p-1.5 sm:p-1.5 min-w-[28px] min-h-[28px] sm:min-w-0 sm:min-h-0 rounded-lg border border-border bg-white text-muted-foreground hover:text-destructive hover:border-destructive/30 transition-colors flex items-center justify-center"
                                                   >
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                   </button>
@@ -967,7 +979,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                         </div>
                                       </div>
                                     </motion.div>
-                                  )}
+                                  ); }}
                                 </Draggable>
                               </React.Fragment>
                             );
