@@ -174,6 +174,8 @@
         border: 1px solid var(--glass-border);
         border-radius: var(--radius-xl);
         box-shadow: var(--shadow-sm);
+        transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                    border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .glass-header {
@@ -223,6 +225,35 @@
         100% { background-position:  200% 0; }
     }
 
+    /* Spring-based dialog animations */
+    .dialog-content-animated {
+        animation: dialog-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .dialog-content-animated[data-closed] {
+        animation: dialog-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes dialog-in {
+        0% {
+            opacity: 0;
+            transform: translate(-50%, -48%) scale(0.96);
+        }
+        100% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+    }
+    @keyframes dialog-out {
+        0% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        100% {
+            opacity: 0;
+            transform: translate(-50%, -48%) scale(0.96);
+        }
+    }
+
     /* Subtle ambient background pattern */
     .bg-grid {
         background-image:
@@ -245,4 +276,32 @@
     .badge-activity     { background: oklch(0.42 0.09  60 / 8%);  color: oklch(0.36 0.09  60); border-color: oklch(0.42 0.09  60 / 15%); }
     .badge-transport    { background: oklch(0.40 0.07 295 / 8%);  color: oklch(0.35 0.06 295); border-color: oklch(0.40 0.07 295 / 15%); }
     .badge-train        { background: oklch(0.40 0.08 140 / 8%);  color: oklch(0.35 0.08 140); border-color: oklch(0.40 0.08 140 / 15%); }
+}
+
+/* ===== Global motion polish ===== */
+@layer base {
+    /* Smooth transitions for all interactive elements */
+    button, a, [role="button"] {
+        transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+    }
+
+    /* Inputs: smooth focus ring */
+    input, textarea, select {
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    input:focus, textarea:focus, select:focus {
+        box-shadow: 0 0 0 3px oklch(0.24 0.030 255 / 10%);
+    }
+
+    /* Reduce motion for users who prefer it */
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+        .dialog-content-animated {
+            animation: none !important;
+        }
+    }
 }

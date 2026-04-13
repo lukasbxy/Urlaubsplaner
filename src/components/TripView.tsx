@@ -57,9 +57,9 @@ const todoVariants: Variants = {
 
 /** Panel slide variants – slides left/right based on direction */
 const panelVariants: Variants = {
-  enter: (dir: number) => ({ opacity: 0, x: dir * 18 }),
-  center: { opacity: 1, x: 0, transition: { duration: 0.25, ease: EASE } },
-  exit: (dir: number) => ({ opacity: 0, x: dir * -18, transition: { duration: 0.18, ease: EASE } }),
+  enter: (dir: number) => ({ opacity: 0, x: dir * 24, filter: 'blur(3px)' }),
+  center: { opacity: 1, x: 0, filter: 'blur(0px)', transition: { duration: 0.28, ease: EASE } },
+  exit: (dir: number) => ({ opacity: 0, x: dir * -24, filter: 'blur(3px)', transition: { duration: 0.2, ease: EASE } }),
 };
 
 const TABS = ['timeline', 'todos', 'map'] as const;
@@ -348,7 +348,8 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
         const same = items.find(i => i.booking_reference === newItemBookingRef);
         if (same) { payload.file_data = same.file_data; payload.file_name = same.file_name; }
       }
-      await supabase.from('items').insert(payload);
+      const { data: inserted } = await supabase.from('items').insert(payload).select().single();
+      if (inserted) setItems(prev => [...prev, inserted]);
       setIsAddItemOpen(false); resetForm();
     } catch (err) { console.error(err); }
     finally { setIsSaving(false); }
@@ -381,10 +382,14 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
         booking_reference: newItemBookingRef || undefined,
         file_data: newItemFileData, file_name: newItemFileName,
       };
-      await supabase.from('items').update(updates).eq('id', editingItem.id);
+      const { data: updated } = await supabase.from('items').update(updates).eq('id', editingItem.id).select().single();
+      if (updated) {
+        setItems(prev => prev.map(i => i.id === editingItem.id ? updated : i));
+      }
       if (newItemBookingRef && newItemFileData !== editingItem.file_data) {
         for (const it of items.filter(i => i.booking_reference === newItemBookingRef && i.id !== editingItem.id)) {
-          await supabase.from('items').update({ file_data: newItemFileData, file_name: newItemFileName }).eq('id', it.id);
+          const { data: synced } = await supabase.from('items').update({ file_data: newItemFileData, file_name: newItemFileName }).eq('id', it.id).select().single();
+          if (synced) setItems(prev => prev.map(i => i.id === synced.id ? synced : i));
         }
       }
       setIsEditItemOpen(false); setEditingItem(null); resetForm();
@@ -602,20 +607,28 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
   /* ── Tab button ── */
   const TabBtn = ({ k, icon: Icon, label }: { k: Tab; icon: React.ElementType; label: string }) => (
     <motion.button
-      whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+      whileTap={{ scale: 0.95 }}
       onClick={() => changeTab(k)}
-      className="flex items-center gap-1 sm:gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs font-medium transition-colors"
-      style={activeTab === k
-        ? { background: 'var(--gradient-primary)', color: 'white' }
-        : { color: 'oklch(0.52 0.012 255)' }}
+      className="relative flex items-center gap-1 sm:gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs font-medium transition-colors"
+      style={{ color: activeTab === k ? 'white' : 'oklch(0.52 0.012 255)' }}
     >
-      <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-      {label}
+      {activeTab === k && (
+        <motion.div
+          layoutId="active-tab-pill"
+          className="absolute inset-0 rounded-md sm:rounded-lg"
+          style={{ background: 'var(--gradient-primary)' }}
+          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+        />
+      )}
+      <span className="relative z-10 flex items-center gap-1 sm:gap-1.5">
+        <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+        {label}
+      </span>
     </motion.button>
   );
 
   if (!trip) return (
-    <div className="flex h-screen items-center justify-center">
+    <div className="flex h-dvh items-center justify-center">
       <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }} className="text-muted-foreground/40">
         <Navigation className="h-7 w-7" />
       </motion.div>
@@ -625,7 +638,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
   const dir = direction(prevTab, activeTab);
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-dvh bg-background">
       {/* ── Header ── */}
       <header className="glass-header sticky top-0 z-50 px-3 py-2 sm:px-4 sm:py-2.5">
         <div className="flex items-center justify-between gap-2 sm:gap-3">
@@ -766,6 +779,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                     <Droppable droppableId="timeline">
                       {(provided) => (
                         <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-0.5 sm:space-y-1">
+                          <AnimatePresence initial={false}>
                           {processedItems.map((item, index) => {
                             const Icon = typeIcons[item.type] || MapPin;
                             const titleIsTbd = item.title.toLowerCase().includes('tbd');
@@ -774,12 +788,15 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                               <React.Fragment key={item.id}>
                                 {/* Day separator */}
                                 {dayLabel && (
-                                  <div className="flex items-center gap-2 pt-2 pb-0.5 sm:pt-3 sm:pb-1 first:pt-0">
+                                  <motion.div
+                                    layout
+                                    className="flex items-center gap-2 pt-2 pb-0.5 sm:pt-3 sm:pb-1 first:pt-0"
+                                  >
                                     <span className="text-[10px] sm:text-[11px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                                       {dayLabel}
                                     </span>
                                     <div className="flex-1 h-px bg-border" />
-                                  </div>
+                                  </motion.div>
                                 )}
                                 <Draggable draggableId={item.id} index={index}>
                                   {(provided, snapshot) => (
@@ -791,11 +808,21 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                       variants={itemVariants}
                                       initial="hidden"
                                       animate="visible"
+                                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                                      layout="position"
+                                      layoutId={`timeline-item-${item.id}`}
+                                      transition={{ layout: { type: 'spring', stiffness: 300, damping: 25, mass: 0.8 } }}
                                       whileHover={{ scale: 1.01 }}
-                                      style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
+                                      style={{
+                                        ...provided.draggableProps.style,
+                                        opacity: snapshot.isDragging ? 0.9 : 1,
+                                        zIndex: snapshot.isDragging ? 50 : 'auto',
+                                        boxShadow: snapshot.isDragging ? '0 8px 32px rgba(0,0,0,0.12)' : undefined,
+                                      }}
                                       onClick={() => setSelectedItemId(item.id)}
                                       className={
-                                        'glass-card p-2.5 sm:p-3 cursor-pointer group ' +
+                                        'glass-card p-2.5 sm:p-3 cursor-pointer group transition-shadow duration-200 ' +
+                                        (snapshot.isDragging ? 'ring-2 ring-primary/30 scale-[1.02] ' : '') +
                                         (titleIsTbd
                                           ? 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/45 dark:bg-orange-950/30'
                                           : '')
@@ -945,6 +972,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                               </React.Fragment>
                             );
                           })}
+                          </AnimatePresence>
                           {provided.placeholder}
                         </div>
                       )}
@@ -952,11 +980,18 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                   </DragDropContext>
 
                   {items.length === 0 && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.15, duration: 0.4, ease: EASE }}
                       className="flex flex-col items-center justify-center py-12 sm:py-16 gap-2.5 sm:gap-3 text-center">
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border border-dashed border-border flex items-center justify-center">
+                      <motion.div
+                        animate={{ y: [0, -4, 0] }}
+                        transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border border-dashed border-border flex items-center justify-center"
+                      >
                         <Navigation className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
-                      </div>
+                      </motion.div>
                       <div>
                         <p className="text-xs sm:text-sm font-medium text-muted-foreground">Reiseplan ist leer</p>
                         <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">Füge deinen ersten Eintrag hinzu.</p>
@@ -1002,6 +1037,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                     <Droppable droppableId="todos">
                       {(provided) => (
                         <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-1.5 sm:space-y-2">
+                          <AnimatePresence initial={false}>
                           {todos.map((todo, index) => (
                             <Draggable key={todo.id} draggableId={todo.id} index={index}>
                               {(provided, snapshot) => (
@@ -1012,6 +1048,9 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                   variants={todoVariants}
                                   initial="hidden"
                                   animate="visible"
+                                  exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
+                                  layout
+                                  layoutTransition={{ type: 'spring', stiffness: 400, damping: 30 }}
                                   style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
                                   className="glass-card flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 group"
                                 >
@@ -1019,16 +1058,29 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                     <GripVertical className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                   </div>
                                   <div className="flex items-center gap-2 sm:gap-2.5 flex-1 cursor-pointer" onClick={() => toggleTodo(todo)}>
-                                    <div className="w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-all duration-150"
-                                      style={{ borderColor: todo.completed ? 'oklch(0.50 0.13 145)' : 'oklch(0.75 0.008 255)', background: todo.completed ? 'oklch(0.50 0.13 145)' : 'transparent' }}>
+                                    <motion.div
+                                      className="w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0"
+                                      animate={{
+                                        borderColor: todo.completed ? 'oklch(0.50 0.13 145)' : 'oklch(0.75 0.008 255)',
+                                        background: todo.completed ? 'oklch(0.50 0.13 145)' : 'transparent',
+                                        scale: 1,
+                                      }}
+                                      whileTap={{ scale: 0.8 }}
+                                      transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                                    >
                                       <AnimatePresence>
                                         {todo.completed && (
-                                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={{ duration: 0.15 }}>
+                                          <motion.div
+                                            initial={{ scale: 0, rotate: -45 }}
+                                            animate={{ scale: 1, rotate: 0 }}
+                                            exit={{ scale: 0, rotate: 45 }}
+                                            transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                                          >
                                             <Check className="h-2.5 w-2.5 text-white" />
                                           </motion.div>
                                         )}
                                       </AnimatePresence>
-                                    </div>
+                                    </motion.div>
                                     {editingTodoId === todo.id ? (
                                       <Input
                                         autoFocus
@@ -1057,6 +1109,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                               )}
                             </Draggable>
                           ))}
+                          </AnimatePresence>
                           {provided.placeholder}
                         </div>
                       )}
@@ -1064,11 +1117,18 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                   </DragDropContext>
 
                   {todos.length === 0 && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.15, duration: 0.4, ease: EASE }}
                       className="flex flex-col items-center justify-center py-10 sm:py-12 gap-2.5 sm:gap-3 text-center">
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border border-dashed border-border flex items-center justify-center">
+                      <motion.div
+                        animate={{ y: [0, -4, 0] }}
+                        transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border border-dashed border-border flex items-center justify-center"
+                      >
                         <ListTodo className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
-                      </div>
+                      </motion.div>
                       <p className="text-xs sm:text-sm text-muted-foreground">Keine Aufgaben vorhanden.</p>
                     </motion.div>
                   )}
