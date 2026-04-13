@@ -226,11 +226,43 @@
     }
 
     /* Spring-based dialog animations */
+    /* Mobile: slide up from bottom */
     .dialog-content-animated {
-        animation: dialog-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: dialog-in-mobile 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     .dialog-content-animated[data-closed] {
-        animation: dialog-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: dialog-out-mobile 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes dialog-in-mobile {
+        0% {
+            opacity: 0;
+            transform: translateY(2rem);
+        }
+        100% {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    @keyframes dialog-out-mobile {
+        0% {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        100% {
+            opacity: 0;
+            transform: translateY(2rem);
+        }
+    }
+
+    /* Desktop: centered scale */
+    @media (min-width: 640px) {
+        .dialog-content-animated {
+            animation: dialog-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .dialog-content-animated[data-closed] {
+            animation: dialog-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
     }
 
     @keyframes dialog-in {

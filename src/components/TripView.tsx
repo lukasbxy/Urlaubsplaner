@@ -704,7 +704,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                   <span className="hidden sm:inline">Hinzufügen</span>
                 </motion.button>
               } />
-              <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
+              <DialogContent className="glass-card border-0 p-4 sm:p-6 sm:max-w-md shadow-lg">
                 <DialogHeader>
                   <DialogTitle className="text-sm sm:text-base font-semibold">Zum Reiseplan hinzufügen</DialogTitle>
                 </DialogHeader>
@@ -714,7 +714,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
             {/* Edit dialog */}
             <Dialog open={isEditItemOpen} onOpenChange={v => { setIsEditItemOpen(v); if (!v) { setEditingItem(null); resetForm(); } }}>
-              <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
+              <DialogContent className="glass-card border-0 p-4 sm:p-6 sm:max-w-md shadow-lg">
                 <DialogHeader>
                   <DialogTitle className="text-sm sm:text-base font-semibold">Eintrag bearbeiten</DialogTitle>
                 </DialogHeader>
@@ -724,7 +724,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
             {/* Edit Trip dialog */}
             <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
-              <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-md shadow-lg">
+              <DialogContent className="glass-card border-0 p-4 sm:p-6 sm:max-w-md shadow-lg">
                 <DialogHeader>
                   <DialogTitle className="text-sm sm:text-base font-semibold">Reise anpassen</DialogTitle>
                 </DialogHeader>
@@ -902,7 +902,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                   </button>
                                                 } />
-                                                <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-sm shadow-lg">
+                                                <DialogContent className="glass-card border-0 p-4 sm:p-6 sm:max-w-sm shadow-lg">
                                                   <DialogHeader>
                                                     <DialogTitle className="text-sm sm:text-base font-semibold">Eintrag löschen?</DialogTitle>
                                                     <DialogDescription className="text-sm">
