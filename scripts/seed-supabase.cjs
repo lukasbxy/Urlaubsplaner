@@ -1,20 +1,38 @@
+/**
+ * Seed-Daten in Supabase schreiben. Benötigt den Service-Role-Key (nur lokal / CI, nie im Client).
+ *
+ * Umgebung: SUPABASE_URL (oder VITE_SUPABASE_URL) und SUPABASE_SERVICE_ROLE_KEY
+ * Optional: Werte aus .env / .env.local via dotenv
+ */
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = 'https://REDACTED_PROJECT_REF.supabase.co';
-const supabaseKey = 'REMOVED_JWT';
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error(
+    'Fehlende Umgebung: SUPABASE_URL (oder VITE_SUPABASE_URL) und SUPABASE_SERVICE_ROLE_KEY setzen.',
+  );
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function uuidv4() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
 
 async function seed() {
   console.log('Seeding database...');
-  
+
   const tripId = uuidv4();
 
   const { data: trip, error: tripError } = await supabase
@@ -30,7 +48,7 @@ async function seed() {
       created_at: new Date().toISOString(),
       flight_cost: 450,
       train_cost: 200,
-      transport_cost: 150
+      transport_cost: 150,
     })
     .select()
     .single();
@@ -39,24 +57,213 @@ async function seed() {
   else console.log('Trip created:', trip?.id);
 
   const items = [
-    { trip_id: tripId, type: 'flight', title: 'Flug nach Berlin', location_name: 'München Hauptbahnhof', start_time: '2026-06-15T08:00:00Z', end_time: '2026-06-15T09:30:00Z', item_order: 0, lat: 52.52, lng: 13.405 },
-    { trip_id: tripId, type: 'location', title: 'Brandenburger Tor', location_name: 'Pariser Platz, Berlin', start_time: '2026-06-15T10:00:00Z', end_time: '2026-06-15T12:00:00Z', item_order: 1, lat: 52.5163, lng: 13.3777 },
-    { trip_id: tripId, type: 'accommodation', title: 'Hotel Berlin', location_name: 'Berlin', start_time: '2026-06-15T14:00:00Z', end_time: '2026-06-17T10:00:00Z', item_order: 2, lat: 52.52, lng: 13.405 },
-    { trip_id: tripId, type: 'train', title: 'Nachtzug nach Kopenhagen', location_name: 'Berlin Hauptbahnhof', end_location_name: 'Kopenhagen', start_time: '2026-06-17T21:00:00Z', end_time: '2026-06-18T08:00:00Z', item_order: 3, lat: 52.52, lng: 13.405, end_lat: 55.6761, end_lng: 12.5681 },
-    { trip_id: tripId, type: 'transport', title: 'Fähre nach Malmö', location_name: 'Kopenhagen Hafen', end_location_name: 'Malmö', start_time: '2026-06-18T10:00:00Z', end_time: '2026-06-18T14:00:00Z', item_order: 4, lat: 55.6761, lng: 12.5681, end_lat: 55.6045, end_lng: 13.0038 },
-    { trip_id: tripId, type: 'location', title: 'Malmö Stortorget', location_name: 'Malmö', start_time: '2026-06-18T15:00:00Z', end_time: '2026-06-18T17:00:00Z', item_order: 5, lat: 55.6045, lng: 13.0038 },
-    { trip_id: tripId, type: 'transport', title: 'Mietwagen Malmö', location_name: 'Malmö', start_time: '2026-06-18T18:00:00Z', end_time: '2026-06-22T10:00:00Z', item_order: 6, lat: 55.6045, lng: 13.0038 },
-    { trip_id: tripId, type: 'location', title: 'Göteborg Hafen', location_name: 'Göteborg', start_time: '2026-06-20T10:00:00Z', end_time: '2026-06-20T12:00:00Z', item_order: 7, lat: 57.7089, lng: 11.9746 },
-    { trip_id: tripId, type: 'location', title: 'Stockholm Altstadt', location_name: 'Stockholm', start_time: '2026-06-21T10:00:00Z', end_time: '2026-06-21T14:00:00Z', item_order: 8, lat: 59.3293, lng: 18.0686 },
-    { trip_id: tripId, type: 'flight', title: 'Flug nach Helsinki', location_name: 'Stockholm Arlanda', start_time: '2026-06-22T08:00:00Z', end_time: '2026-06-22T10:30:00Z', item_order: 9, lat: 59.6492, lng: 17.9446 },
-    { trip_id: tripId, type: 'location', title: 'Marktplatz Helsinki', location_name: 'Helsinki', start_time: '2026-06-22T11:00:00Z', end_time: '2026-06-22T13:00:00Z', item_order: 10, lat: 60.1699, lng: 24.9384 },
-    { trip_id: tripId, type: 'location', title: 'Suomenlinna', location_name: 'Helsinki', start_time: '2026-06-23T10:00:00Z', end_time: '2026-06-23T14:00:00Z', item_order: 11, lat: 60.0905, lng: 25.0032 },
-    { trip_id: tripId, type: 'location', title: 'Rovaniemi', location_name: 'Rovaniemi', start_time: '2026-06-24T10:00:00Z', end_time: '2026-06-25T12:00:00Z', item_order: 12, lat: 66.5039, lng: 25.7294 },
-    { trip_id: tripId, type: 'flight', title: 'Flug nach Danzig', location_name: 'Helsinki', start_time: '2026-06-26T08:00:00Z', end_time: '2026-06-26T09:00:00Z', item_order: 13, lat: 60.1699, lng: 24.9384 },
-    { trip_id: tripId, type: 'location', title: 'Danzig Altstadt', location_name: 'Danzig', start_time: '2026-06-26T10:00:00Z', end_time: '2026-06-26T14:00:00Z', item_order: 14, lat: 54.352, lng: 18.6466 },
-    { trip_id: tripId, type: 'location', title: 'Warschau', location_name: 'Warschau', start_time: '2026-06-27T10:00:00Z', end_time: '2026-06-28T12:00:00Z', item_order: 15, lat: 52.2297, lng: 21.0122 },
-    { trip_id: tripId, type: 'train', title: 'Rückfahrt nach Berlin', location_name: 'Warschau', end_location_name: 'Berlin', start_time: '2026-07-01T10:00:00Z', end_time: '2026-07-01T18:00:00Z', item_order: 16, lat: 52.2297, lng: 21.0122, end_lat: 52.52, end_lng: 13.405 },
-    { trip_id: tripId, type: 'location', title: 'Zurück in München', location_name: 'München', start_time: '2026-07-02T10:00:00Z', end_time: '2026-07-02T12:00:00Z', item_order: 17, lat: 48.1351, lng: 11.582 }
+    {
+      trip_id: tripId,
+      type: 'flight',
+      title: 'Flug nach Berlin',
+      location_name: 'München Hauptbahnhof',
+      start_time: '2026-06-15T08:00:00Z',
+      end_time: '2026-06-15T09:30:00Z',
+      item_order: 0,
+      lat: 52.52,
+      lng: 13.405,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Brandenburger Tor',
+      location_name: 'Pariser Platz, Berlin',
+      start_time: '2026-06-15T10:00:00Z',
+      end_time: '2026-06-15T12:00:00Z',
+      item_order: 1,
+      lat: 52.5163,
+      lng: 13.3777,
+    },
+    {
+      trip_id: tripId,
+      type: 'accommodation',
+      title: 'Hotel Berlin',
+      location_name: 'Berlin',
+      start_time: '2026-06-15T14:00:00Z',
+      end_time: '2026-06-17T10:00:00Z',
+      item_order: 2,
+      lat: 52.52,
+      lng: 13.405,
+    },
+    {
+      trip_id: tripId,
+      type: 'train',
+      title: 'Nachtzug nach Kopenhagen',
+      location_name: 'Berlin Hauptbahnhof',
+      end_location_name: 'Kopenhagen',
+      start_time: '2026-06-17T21:00:00Z',
+      end_time: '2026-06-18T08:00:00Z',
+      item_order: 3,
+      lat: 52.52,
+      lng: 13.405,
+      end_lat: 55.6761,
+      end_lng: 12.5681,
+    },
+    {
+      trip_id: tripId,
+      type: 'transport',
+      title: 'Fähre nach Malmö',
+      location_name: 'Kopenhagen Hafen',
+      end_location_name: 'Malmö',
+      start_time: '2026-06-18T10:00:00Z',
+      end_time: '2026-06-18T14:00:00Z',
+      item_order: 4,
+      lat: 55.6761,
+      lng: 12.5681,
+      end_lat: 55.6045,
+      end_lng: 13.0038,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Malmö Stortorget',
+      location_name: 'Malmö',
+      start_time: '2026-06-18T15:00:00Z',
+      end_time: '2026-06-18T17:00:00Z',
+      item_order: 5,
+      lat: 55.6045,
+      lng: 13.0038,
+    },
+    {
+      trip_id: tripId,
+      type: 'transport',
+      title: 'Mietwagen Malmö',
+      location_name: 'Malmö',
+      start_time: '2026-06-18T18:00:00Z',
+      end_time: '2026-06-22T10:00:00Z',
+      item_order: 6,
+      lat: 55.6045,
+      lng: 13.0038,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Göteborg Hafen',
+      location_name: 'Göteborg',
+      start_time: '2026-06-20T10:00:00Z',
+      end_time: '2026-06-20T12:00:00Z',
+      item_order: 7,
+      lat: 57.7089,
+      lng: 11.9746,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Stockholm Altstadt',
+      location_name: 'Stockholm',
+      start_time: '2026-06-21T10:00:00Z',
+      end_time: '2026-06-21T14:00:00Z',
+      item_order: 8,
+      lat: 59.3293,
+      lng: 18.0686,
+    },
+    {
+      trip_id: tripId,
+      type: 'flight',
+      title: 'Flug nach Helsinki',
+      location_name: 'Stockholm Arlanda',
+      start_time: '2026-06-22T08:00:00Z',
+      end_time: '2026-06-22T10:30:00Z',
+      item_order: 9,
+      lat: 59.6492,
+      lng: 17.9446,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Marktplatz Helsinki',
+      location_name: 'Helsinki',
+      start_time: '2026-06-22T11:00:00Z',
+      end_time: '2026-06-22T13:00:00Z',
+      item_order: 10,
+      lat: 60.1699,
+      lng: 24.9384,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Suomenlinna',
+      location_name: 'Helsinki',
+      start_time: '2026-06-23T10:00:00Z',
+      end_time: '2026-06-23T14:00:00Z',
+      item_order: 11,
+      lat: 60.0905,
+      lng: 25.0032,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Rovaniemi',
+      location_name: 'Rovaniemi',
+      start_time: '2026-06-24T10:00:00Z',
+      end_time: '2026-06-25T12:00:00Z',
+      item_order: 12,
+      lat: 66.5039,
+      lng: 25.7294,
+    },
+    {
+      trip_id: tripId,
+      type: 'flight',
+      title: 'Flug nach Danzig',
+      location_name: 'Helsinki',
+      start_time: '2026-06-26T08:00:00Z',
+      end_time: '2026-06-26T09:00:00Z',
+      item_order: 13,
+      lat: 60.1699,
+      lng: 24.9384,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Danzig Altstadt',
+      location_name: 'Danzig',
+      start_time: '2026-06-26T10:00:00Z',
+      end_time: '2026-06-26T14:00:00Z',
+      item_order: 14,
+      lat: 54.352,
+      lng: 18.6466,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Warschau',
+      location_name: 'Warschau',
+      start_time: '2026-06-27T10:00:00Z',
+      end_time: '2026-06-28T12:00:00Z',
+      item_order: 15,
+      lat: 52.2297,
+      lng: 21.0122,
+    },
+    {
+      trip_id: tripId,
+      type: 'train',
+      title: 'Rückfahrt nach Berlin',
+      location_name: 'Warschau',
+      end_location_name: 'Berlin',
+      start_time: '2026-07-01T10:00:00Z',
+      end_time: '2026-07-01T18:00:00Z',
+      item_order: 16,
+      lat: 52.2297,
+      lng: 21.0122,
+      end_lat: 52.52,
+      end_lng: 13.405,
+    },
+    {
+      trip_id: tripId,
+      type: 'location',
+      title: 'Zurück in München',
+      location_name: 'München',
+      start_time: '2026-07-02T10:00:00Z',
+      end_time: '2026-07-02T12:00:00Z',
+      item_order: 17,
+      lat: 48.1351,
+      lng: 11.582,
+    },
   ];
 
   const { error: itemsError } = await supabase.from('items').insert(items);
@@ -69,7 +276,7 @@ async function seed() {
     { trip_id: tripId, text: 'Hotel Helsinki buchen', completed: false, todo_order: 2 },
     { trip_id: tripId, text: 'Reisepass verlängern', completed: false, todo_order: 3 },
     { trip_id: tripId, text: 'Schweden Kronen wechseln', completed: false, todo_order: 4 },
-    { trip_id: tripId, text: 'Wetter in Helsinki prüfen', completed: false, todo_order: 5 }
+    { trip_id: tripId, text: 'Wetter in Helsinki prüfen', completed: false, todo_order: 5 },
   ];
 
   const { error: todosError } = await supabase.from('todos').insert(todos);

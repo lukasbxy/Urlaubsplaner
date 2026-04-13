@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   ArrowLeft, Plus, MapPin, Plane, Hotel, Activity, Car, Trash2, Copy, Check,
   Train, Loader2, FileText, X, Pencil, ListTodo, GripVertical, WifiOff,
-  Euro, CalendarDays, Navigation, ChevronRight, ExternalLink, Settings2,
+  Euro, CalendarDays, Navigation, ChevronRight, Settings2,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { format, isSameDay, differenceInDays, differenceInCalendarDays, differenceInMinutes } from 'date-fns';
@@ -17,6 +17,7 @@ import { de } from 'date-fns/locale';
 import { Switch } from './ui/switch';
 import { importLibrary } from '@googlemaps/js-api-loader';
 import { fetchDrivingRoute, buildGoogleMapsNavigationUrl, type DrivingRouteInfo } from '../lib/drivingDirections';
+import { tripShareUrl } from '../lib/tripUrl';
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -208,7 +209,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
   const handleDeleteItem = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const { error } = await supabase.from('trip_items').delete().eq('id', id);
+    const { error } = await supabase.from('items').delete().eq('id', id);
     if (error) {
       console.error('Error deleting item:', error);
       alert('Fehler beim Löschen');
@@ -434,7 +435,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
   const [isCopied, setIsCopied] = useState(false);
   const copyTripId = () => {
-    navigator.clipboard.writeText(tripId);
+    navigator.clipboard.writeText(tripShareUrl(tripId));
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
@@ -664,9 +665,6 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                     {totalCost.toFixed(2)} €
                   </span>
                 )}
-                {trip.description && (
-                  <span className="text-[10px] text-muted-foreground truncate max-w-[100px] hidden sm:block italic border-l border-border pl-2">{trip.description}</span>
-                )}
               </div>
             </div>
           </div>
@@ -770,6 +768,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                         <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-1">
                           {processedItems.map((item, index) => {
                             const Icon = typeIcons[item.type] || MapPin;
+                            const titleIsTbd = item.title.toLowerCase().includes('tbd');
                             const dayLabel = getDayLabel(item as TripItem, index > 0 ? processedItems[index - 1] as TripItem : null);
                             return (
                               <React.Fragment key={item.id}>
@@ -795,7 +794,12 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                       whileHover={{ scale: 1.01 }}
                                       style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
                                       onClick={() => setSelectedItemId(item.id)}
-                                      className="glass-card p-3 cursor-pointer group"
+                                      className={
+                                        'glass-card p-3 cursor-pointer group ' +
+                                        (titleIsTbd
+                                          ? 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/45 dark:bg-orange-950/30'
+                                          : '')
+                                      }
                                     >
                                       <div className="flex gap-2.5">
                                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 icon-${item.type}`}>
@@ -805,11 +809,48 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                           <div className="flex items-start justify-between gap-1">
                                             <div className="min-w-0">
                                               <h4 className="text-sm font-semibold truncate leading-tight">{item.title}</h4>
-                                              {getDurationLabel(item as TripItem) && (
-                                                <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border mt-0.5 text-muted-foreground bg-muted/50">
-                                                  {getDurationLabel(item as TripItem)}
-                                                </span>
-                                              )}
+                                              {(() => {
+                                                const durLabel = getDurationLabel(item as TripItem);
+                                                const tr = transportRoutes[item.id];
+                                                const navOk =
+                                                  item.type === 'transport' &&
+                                                  tr &&
+                                                  typeof item.lat === 'number' &&
+                                                  typeof item.lng === 'number' &&
+                                                  typeof item.end_lat === 'number' &&
+                                                  typeof item.end_lng === 'number';
+                                                if (!navOk && !durLabel) return null;
+                                                return (
+                                                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                                    {navOk && (
+                                                      <a
+                                                        href={buildGoogleMapsNavigationUrl(
+                                                          { lat: item.lat!, lng: item.lng! },
+                                                          { lat: item.end_lat!, lng: item.end_lng! },
+                                                        )}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="inline-flex flex-wrap items-baseline gap-x-1 text-[10px] font-medium text-rose-700/90 hover:text-rose-800 hover:underline underline-offset-2"
+                                                      >
+                                                        {tr?.durationInTrafficText
+                                                          ? `Live: ${tr.durationInTrafficText}`
+                                                          : tr?.durationText
+                                                            ? `Fahrt: ${tr.durationText}`
+                                                            : 'Route in Google Maps'}
+                                                        {tr?.distanceText ? (
+                                                          <span className="text-muted-foreground font-normal">({tr.distanceText})</span>
+                                                        ) : null}
+                                                      </a>
+                                                    )}
+                                                    {durLabel && (
+                                                      <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border text-muted-foreground bg-muted/50">
+                                                        {durLabel}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })()}
                                             </div>
                                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                                               {item.file_data && (
@@ -882,54 +923,11 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                               )}
                                             </div>
                                           )}
-                                          {item.type === 'transport' &&
-                                            typeof item.lat === 'number' &&
-                                            typeof item.lng === 'number' &&
-                                            typeof item.end_lat === 'number' &&
-                                            typeof item.end_lng === 'number' && (
-                                            <a
-                                              href={buildGoogleMapsNavigationUrl(
-                                                { lat: item.lat, lng: item.lng },
-                                                { lat: item.end_lat, lng: item.end_lng },
-                                              )}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              onClick={e => e.stopPropagation()}
-                                              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-rose-700/90 hover:text-rose-800 hover:underline underline-offset-2"
-                                            >
-                                              <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                                              Navigation in Google Maps
-                                            </a>
-                                          )}
                                           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                                             {item.start_time && (
-                                              <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 mt-0.5">
-                                                <div className="flex items-start gap-1.5">
-                                                  <CalendarDays className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                                                  <span>{formatDateRange(item.start_time, item.end_time, item.is_all_day)}</span>
-                                                </div>
-                                                {item.type === 'transport' && transportRoutes[item.id] && (
-                                                  <span className="text-[11px] font-medium text-foreground/70">
-                                                    <span className="text-muted-foreground/60">· </span>
-                                                    {transportRoutes[item.id]?.durationInTrafficText
-                                                      ? `Live: ${transportRoutes[item.id]!.durationInTrafficText}`
-                                                      : `Fahrt: ${transportRoutes[item.id]!.durationText}`}
-                                                    {transportRoutes[item.id]?.distanceText ? (
-                                                      <span className="text-muted-foreground font-normal"> ({transportRoutes[item.id]!.distanceText})</span>
-                                                    ) : null}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            )}
-                                            {!item.start_time && item.type === 'transport' && transportRoutes[item.id] && (
-                                              <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-foreground/70">
-                                                <Navigation className="h-3.5 w-3.5 flex-shrink-0" />
-                                                {transportRoutes[item.id]?.durationInTrafficText
-                                                  ? `Live: ${transportRoutes[item.id]!.durationInTrafficText}`
-                                                  : `Fahrt: ${transportRoutes[item.id]!.durationText}`}
-                                                {transportRoutes[item.id]?.distanceText ? (
-                                                  <span className="text-muted-foreground font-normal"> ({transportRoutes[item.id]!.distanceText})</span>
-                                                ) : null}
+                                              <div className="flex items-start gap-1.5 mt-0.5">
+                                                <CalendarDays className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                                                <span>{formatDateRange(item.start_time, item.end_time, item.is_all_day)}</span>
                                               </div>
                                             )}
                                             {item.displayCost !== undefined && item.displayCost > 0 && (

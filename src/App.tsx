@@ -5,14 +5,31 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Dashboard } from './components/Dashboard';
 import { TripView } from './components/TripView';
 import { supabase } from './lib/supabase';
+import { appHomePath, parseTripIdFromPath, tripPath } from './lib/tripUrl';
+import { oauthRateLimitStatus, recordOAuthAttempt } from './lib/oauthRateLimit';
 import { Plane, WifiOff, LogOut, Compass } from 'lucide-react';
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? parseTripIdFromPath() : null,
+  );
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [oauthLimitMessage, setOauthLimitMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onPop = () => setSelectedTripId(parseTripIdFromPath());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const id = parseTripIdFromPath();
+    if (id) setSelectedTripId(id);
+  }, [user]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -25,11 +42,42 @@ function AppContent() {
     };
   }, []);
 
+  const selectTrip = (tripId: string) => {
+    setSelectedTripId(tripId);
+    window.history.pushState({ screen: 'trip' }, '', tripPath(tripId));
+  };
+
+  const exitTrip = () => {
+    if (parseTripIdFromPath() && window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.history.replaceState({}, '', appHomePath());
+      setSelectedTripId(null);
+    }
+  };
+
   const handleSignIn = async () => {
-    await supabase.auth.signInWithOAuth({ provider: 'google' });
+    const limit = oauthRateLimitStatus();
+    if (limit.ok === false) {
+      setOauthLimitMessage(
+        `Zu viele Anmeldeversuche. Bitte in etwa ${limit.retryAfterSec} Sekunden erneut versuchen.`
+      );
+      return;
+    }
+    setOauthLimitMessage(null);
+    recordOAuthAttempt();
+    const base = import.meta.env.BASE_URL;
+    const path = base.endsWith('/') ? base.slice(0, -1) : base;
+    const redirectTo = path ? `${window.location.origin}${path}` : window.location.origin;
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    });
   };
 
   const handleSignOut = async () => {
+    setSelectedTripId(null);
+    window.history.replaceState({}, '', appHomePath());
     await supabase.auth.signOut();
   };
 
@@ -87,6 +135,11 @@ function AppContent() {
               </p>
             </motion.div>
 
+            {oauthLimitMessage && (
+              <p className="mb-3 text-xs text-center text-amber-700 bg-amber-50 border border-amber-200/80 rounded-lg px-3 py-2">
+                {oauthLimitMessage}
+              </p>
+            )}
             <motion.button
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -119,7 +172,7 @@ function AppContent() {
             exit={{ opacity: 0, x: -32 }}
             transition={{ duration: 0.28, ease: EASE }}
           >
-            <TripView tripId={selectedTripId} onBack={() => setSelectedTripId(null)} />
+            <TripView tripId={selectedTripId} onBack={exitTrip} />
           </motion.div>
         ) : (
           <motion.div
@@ -179,7 +232,7 @@ function AppContent() {
               </div>
             </header>
 
-            <Dashboard onSelectTrip={setSelectedTripId} />
+            <Dashboard onSelectTrip={selectTrip} />
           </motion.div>
         )}
       </AnimatePresence>

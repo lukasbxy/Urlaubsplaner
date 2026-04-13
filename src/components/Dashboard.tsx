@@ -401,12 +401,12 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.99 }}
               onClick={() => setIsDialogOpen(true)}
-              className="cursor-pointer group flex flex-col items-center justify-center gap-2.5 h-32 rounded-2xl border border-dashed border-border hover:border-foreground/20 hover:bg-white/60 transition-all"
+              className="cursor-pointer group flex flex-col items-center justify-center gap-2.5 min-h-[160px] h-full rounded-2xl border border-dashed border-border hover:border-foreground/20 hover:bg-white/60 transition-all"
             >
               <motion.div
                 whileHover={{ rotate: 90 }}
                 transition={{ duration: 0.18 }}
-                className="w-8 h-8 rounded-xl border border-border flex items-center justify-center bg-white text-muted-foreground group-hover:text-foreground group-hover:border-foreground/20 transition-colors"
+                className="w-9 h-9 rounded-xl border border-border flex items-center justify-center bg-white text-muted-foreground group-hover:text-foreground group-hover:border-foreground/20 transition-colors"
               >
                 <Plus className="h-4 w-4" />
               </motion.div>

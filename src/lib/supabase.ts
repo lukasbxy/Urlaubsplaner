@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://REDACTED_PROJECT_REF.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'REMOVED_JWT';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    'Supabase: VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY müssen gesetzt sein (z. B. in .env oder in GitHub Actions Secrets).',
+  );
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 

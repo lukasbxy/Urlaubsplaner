@@ -8,5 +8,4 @@ coverage/
 !.env.example
 
 # Secrets und lokale CLI-Caches
-*firebase-adminsdk*.json
 supabase/.temp/
