@@ -26,7 +26,7 @@ Web-App zum Planen von Reisen und Urlauben: Trips anlegen, Stationen und Buchung
 - **Node.js** (aktuelle LTS empfohlen)
 - Ein **Supabase-Projekt** mit den Tabellen aus den Migrationen unter `supabase/migrations/`
 - Optional: **Google Maps API Key** für Kartenfunktionen
-- Optional: **GEMINI_API_KEY** und **APP_URL** (siehe `.env.example`; werden in der Vite-Konfiguration bzw. für externe Integrationen genutzt, sofern vorhanden)
+- Optional: **VITE_GEMINI_API_KEY** und **APP_URL** (siehe `.env.example`; nur relevant, sobald KI-Features im Client genutzt werden)
 
 ## Installation
 
@@ -43,7 +43,7 @@ Lege eine lokale Datei **`.env`** oder **`.env.local`** an (Vite lädt `VITE_*` 
 | `VITE_SUPABASE_URL` | URL deines Supabase-Projekts |
 | `VITE_SUPABASE_ANON_KEY` | Anon/Public Key aus dem Supabase-Dashboard |
 | `VITE_GOOGLE_MAPS_API_KEY` | Key für Google Maps (Karte / Dienste) |
-| `GEMINI_API_KEY` | Für Gemini / KI-Features, falls genutzt |
+| `VITE_GEMINI_API_KEY` | Optional: Gemini / KI im Browser (Key landet im Client-Bundle; für sensible Nutzung besser Backend-Proxy) |
 | `APP_URL` | Öffentliche Basis-URL der App (z. B. OAuth-Redirects, Links) |
 | `VITE_BASE_PATH` | Nur für statisches Hosting unter Unterpfad (z. B. GitHub Pages Projekt-Site). Lokal meist `/` oder weglassen. |
 
@@ -85,7 +85,7 @@ Das Workflow-File [`.github/workflows/deploy-github-pages.yml`](.github/workflow
 | `VITE_SUPABASE_URL` | ja | Supabase-Projekt-URL |
 | `VITE_SUPABASE_ANON_KEY` | ja | Anon/Public Key |
 | `VITE_GOOGLE_MAPS_API_KEY` | nein | Karten (leer lassen, wenn nicht genutzt) |
-| `GEMINI_API_KEY` | nein | nur falls der Build `GEMINI_API_KEY` braucht |
+| `VITE_GEMINI_API_KEY` | nein | nur falls du Gemini im Frontend nutzt |
 
 `VITE_BASE_PATH` wird im Workflow automatisch auf `/<Repository-Name>/` gesetzt (Vite-`base` für Projekt-Sites). Nach dem ersten erfolgreichen Lauf zeigt die Pages-URL z. B. `https://<user>.github.io/Urlaubsplaner/`.
 
