@@ -10,10 +10,12 @@ import { oauthRateLimitStatus, recordOAuthAttempt } from './lib/oauthRateLimit';
 import { Input } from './components/ui/input';
 import { Plane, WifiOff, LogOut, Compass } from 'lucide-react';
 
-function buildAuthRedirectUrl(): string {
-  const base = import.meta.env.BASE_URL;
-  const path = base.endsWith('/') ? base.slice(0, -1) : base;
-  return path ? `${window.location.origin}${path}` : window.location.origin;
+function mapPasswordLoginError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('invalid login') || m.includes('invalid_credentials') || m.includes('invalid email or password')) {
+    return 'E-Mail oder Passwort ist ungültig.';
+  }
+  return message;
 }
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
@@ -26,9 +28,9 @@ function AppContent() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [authLimitMessage, setAuthLimitMessage] = useState<string | null>(null);
   const [email, setEmail] = useState('');
-  const [magicLinkSending, setMagicLinkSending] = useState(false);
-  const [magicLinkError, setMagicLinkError] = useState<string | null>(null);
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   useEffect(() => {
     const onPop = () => setSelectedTripId(parseTripIdFromPath());
@@ -67,11 +69,15 @@ function AppContent() {
     }
   };
 
-  const handleSendMagicLink = async (e: React.FormEvent) => {
+  const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = email.trim();
-    if (!trimmed) {
-      setMagicLinkError('Bitte eine E-Mail-Adresse eingeben.');
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setLoginError('Bitte E-Mail und Passwort eingeben.');
+      return;
+    }
+    if (!password) {
+      setLoginError('Bitte E-Mail und Passwort eingeben.');
       return;
     }
     const limit = oauthRateLimitStatus();
@@ -82,20 +88,19 @@ function AppContent() {
       return;
     }
     setAuthLimitMessage(null);
-    setMagicLinkError(null);
-    setMagicLinkSent(false);
+    setLoginError(null);
     recordOAuthAttempt();
-    setMagicLinkSending(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email: trimmed,
-      options: { emailRedirectTo: buildAuthRedirectUrl() },
+    setLoginSubmitting(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password,
     });
-    setMagicLinkSending(false);
+    setLoginSubmitting(false);
     if (error) {
-      setMagicLinkError(error.message);
+      setLoginError(mapPasswordLoginError(error.message));
       return;
     }
-    setMagicLinkSent(true);
+    setPassword('');
   };
 
   const handleSignOut = async () => {
@@ -154,8 +159,8 @@ function AppContent() {
             >
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight mb-1.5 sm:mb-2">Urlaubsplaner</h1>
               <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed mb-5 sm:mb-7">
-                Plane Reisen, arbeite mit Freunden zusammen und behalte alle Buchungen im Blick. Wir schicken dir einen
-                Anmeldelink per E-Mail (<span className="text-foreground/80 font-medium">Supabase Auth</span>).
+                Plane Reisen, arbeite mit Freunden zusammen und behalte alle Buchungen im Blick. Zugang nur mit einem in
+                Supabase angelegten Konto (keine Registrierung in dieser App).
               </p>
             </motion.div>
 
@@ -169,7 +174,7 @@ function AppContent() {
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.26, duration: 0.35 }}
-              onSubmit={handleSendMagicLink}
+              onSubmit={handlePasswordLogin}
               className="text-left space-y-2.5 sm:space-y-3"
             >
               <div className="space-y-1">
@@ -180,36 +185,53 @@ function AppContent() {
                   id="auth-email"
                   type="email"
                   name="email"
-                  autoComplete="email"
+                  autoComplete="username"
                   placeholder="name@beispiel.de"
                   value={email}
-                  onChange={(ev) => setEmail(ev.target.value)}
-                  disabled={magicLinkSending}
+                  onChange={(ev) => {
+                    setEmail(ev.target.value);
+                    setLoginError(null);
+                  }}
+                  disabled={loginSubmitting}
                   className="h-9 sm:h-10"
                 />
               </div>
-              {magicLinkError && (
+              <div className="space-y-1">
+                <label htmlFor="auth-password" className="text-[11px] sm:text-xs font-medium text-foreground">
+                  Passwort
+                </label>
+                <Input
+                  id="auth-password"
+                  type="password"
+                  name="password"
+                  autoComplete="current-password"
+                  placeholder="Passwort"
+                  value={password}
+                  onChange={(ev) => {
+                    setPassword(ev.target.value);
+                    setLoginError(null);
+                  }}
+                  disabled={loginSubmitting}
+                  className="h-9 sm:h-10"
+                />
+              </div>
+              {loginError && (
                 <p className="text-xs text-destructive" role="alert">
-                  {magicLinkError}
-                </p>
-              )}
-              {magicLinkSent && (
-                <p className="text-xs text-muted-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">
-                  Link ist unterwegs. Bitte Postfach und Spam prüfen. Der Link führt zurück in diese App.
+                  {loginError}
                 </p>
               )}
               <motion.button
                 type="submit"
-                disabled={magicLinkSending}
-                whileHover={{ scale: magicLinkSending ? 1 : 1.02 }}
-                whileTap={{ scale: magicLinkSending ? 1 : 0.98 }}
+                disabled={loginSubmitting}
+                whileHover={{ scale: loginSubmitting ? 1 : 1.02 }}
+                whileTap={{ scale: loginSubmitting ? 1 : 0.98 }}
                 className="w-full py-2 sm:py-2.5 px-4 sm:px-5 rounded-lg sm:rounded-xl text-sm font-semibold text-white transition-shadow disabled:opacity-60"
                 style={{
                   background: 'var(--gradient-primary)',
                   boxShadow: '0 2px 12px oklch(0.24 0.030 255 / 20%)',
                 }}
               >
-                {magicLinkSending ? 'Sende Link…' : 'Anmeldelink senden'}
+                {loginSubmitting ? 'Anmeldung…' : 'Anmelden'}
               </motion.button>
             </motion.form>
           </div>

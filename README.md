@@ -4,7 +4,7 @@ Web-App zum Planen von Reisen und Urlauben: Trips anlegen, Stationen und Buchung
 
 ## Funktionen
 
-- **Anmeldung** über **Supabase Auth** (Magic Link per E-Mail mit `signInWithOtp`)
+- **Anmeldung** über **Supabase Auth** mit **E-Mail und Passwort** (`signInWithPassword`). Nutzer werden nur in der Supabase-Konsole angelegt, **keine Selbstregistrierung** in der App.
 - **Dashboard** mit Übersicht der eigenen und geteilten Trips
 - **Trip-Detailansicht** mit sortierbaren Einträgen (Drag-and-Drop), Kostenfeldern (Flug, Zug, Transport) und To-dos
 - **Eintragstypen**: z. B. Ort, Flug, Unterkunft, Aktivität, Transport, Zug (mit optionalen Koordinaten, Zeiten, Buchungsreferenzen, Anhängen)
@@ -56,9 +56,7 @@ Lege eine lokale Datei **`.env`** oder **`.env.local`** an (Vite lädt `VITE_*` 
    - `20260413123651_create_tables.sql` legt `trips`, `items`, `todos` an und aktiviert RLS inkl. Policies.
    - `20260413124846_remove_rls.sql` **deaktiviert RLS** (nur sinnvoll für unkritische Demos).
    - `20260413200000_restore_rls.sql` **stellt RLS und Policies wieder her** (empfohlen für öffentliche Deployments).
-3. **Authentication:** **E-Mail** aktivieren (Magic Link / OTP). Unter **URL configuration** die **Redirect URLs** eintragen (exakt), z. B.:
-   - lokal: `http://localhost:3000`
-   - GitHub Pages: `https://<user>.github.io/<repo>/` (ohne Pfadfragment, je nach Supabase-UI ggf. mit abschließendem `/`)
+3. **Authentication:** **E-Mail**-Provider mit Passwort nutzen. Nutzer unter **Users** anlegen (oder einladen) und Passwort setzen. Empfehlung: **Sign ups** für die öffentliche App deaktivieren („Disable sign ups“ / nur Einladung), damit niemand sich selbst registrieren kann. Redirect-URLs sind für reinen Passwort-Login weniger kritisch als bei Magic Link; für Passwort-Reset-Mails ggf. Site-URL in Supabase setzen.
 4. Client-seitig `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` setzen.
 
 ### Datenmodell (Kurzüberblick)

@@ -4,7 +4,7 @@ Kurzanleitung für menschliche Entwickler und KI-Assistenten, die an diesem Repo
 
 ## Was ist das Projekt?
 
-**Urlaubsplaner** ist eine React- und Vite-basierte Single-Page-App zum Planen von Reisen. Daten liegen in **Supabase** (PostgreSQL). Authentifizierung erfolgt über **Supabase Auth** (Magic Link per E-Mail, `signInWithOtp`). Es gibt **keine Firebase-Integration** mehr: Client, Dependencies und Konfiguration beziehen sich ausschließlich auf Supabase.
+**Urlaubsplaner** ist eine React- und Vite-basierte Single-Page-App zum Planen von Reisen. Daten liegen in **Supabase** (PostgreSQL). Authentifizierung erfolgt über **Supabase Auth** mit **E-Mail und Passwort** (`signInWithPassword`); Nutzer werden in Supabase angelegt, die App bietet **keine Registrierung**. Es gibt **keine Firebase-Integration** mehr.
 
 ## Dev-Server und Workflow
 
@@ -54,14 +54,14 @@ Vite liest Umgebungsvariablen **beim Build** ein und ersetzt `import.meta.env.VI
 |----------------|--------|
 | `src/lib/supabase.ts` | Einziger Supabase-Client (`createClient`), Typen für `trips`, `items`, `todos` |
 | `src/components/AuthProvider.tsx` | Session, 24h-Wall-Clock-Logout, `getSession` / `onAuthStateChange` |
-| `src/App.tsx` | Login (`signInWithOtp` Magic Link), Logout, Dashboard vs. TripView |
+| `src/App.tsx` | Login (`signInWithPassword`), Logout, Dashboard vs. TripView |
 | `supabase/migrations/` | Schema; `20260413200000_restore_rls.sql` aktiviert RLS für Produktion wieder |
 | `.env.example` | Vorlage für `VITE_*` und weitere Variablen |
 
 ## Backend und Auth
 
 - **Nur Supabase:** Keine `firebase`-Pakete, keine `firebase-applet-config`, kein Firestore.
-- **Redirect URLs** in der Supabase-Konsole müssen zur App-URL passen (lokal und Produktion), damit der Magic-Link zurückführt.
+- In Supabase **Sign-ups** für Fremde abschalten, wenn nur von dir angelegte Konten erlaubt sein sollen.
 - `owner_id` und `collaborator_ids` in `trips` sind an die Auth-User-IDs gekoppelt; bei aktivem RLS müssen Policies zu `auth.uid()` passen.
 
 ## Häufige Probleme und Fixes
