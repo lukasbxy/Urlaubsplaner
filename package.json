@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "urlaubsplaner",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -17,6 +17,8 @@
     "@googlemaps/js-api-loader": "^2.0.2",
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^5.2.2",
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.103.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/leaflet": "^1.9.21",
     "@vitejs/plugin-react": "^5.0.4",
@@ -26,6 +28,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.12.0",
+    "firebase-admin": "^13.8.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",

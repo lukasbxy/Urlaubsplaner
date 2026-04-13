@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { doc, onSnapshot, collection, query, orderBy, addDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Trip, TripItem } from '../types';
-import { Button } from './ui/button';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
+import { supabase, Trip, TripItem, Todo } from '../lib/supabase';
+import { Map } from './Map';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { ArrowLeft, Plus, Upload, MapPin, Plane, Hotel, Activity, Car, Trash2, Copy, Check, Train, Loader2, FileText, X, Pencil, ListTodo, CheckCircle2, Circle, GripVertical, WifiOff } from 'lucide-react';
+import {
+  ArrowLeft, Plus, MapPin, Plane, Hotel, Activity, Car, Trash2, Copy, Check,
+  Train, Loader2, FileText, X, Pencil, ListTodo, GripVertical, WifiOff,
+  Euro, CalendarDays, Navigation, ChevronRight, ExternalLink, Settings2,
+} from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { format, differenceInCalendarDays, intervalToDuration, formatDuration, eachDayOfInterval, isSameDay, startOfDay } from 'date-fns';
+import { format, isSameDay, differenceInDays, differenceInCalendarDays, differenceInMinutes } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Switch } from './ui/switch';
 import { importLibrary } from '@googlemaps/js-api-loader';
+import { fetchDrivingRoute, buildGoogleMapsNavigationUrl, type DrivingRouteInfo } from '../lib/drivingDirections';
 
-import { Map } from './Map';
+const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const typeIcons = {
   location: MapPin,
@@ -25,7 +29,56 @@ const typeIcons = {
   train: Train,
 };
 
-export function TripView({ tripId, onBack }: { tripId: string, onBack: () => void }) {
+const typeLabels: Record<string, string> = {
+  location: 'Ort',
+  flight: 'Flug',
+  accommodation: 'Unterkunft',
+  activity: 'Aktivität',
+  transport: 'Transport',
+  train: 'Zug',
+};
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, x: -10 },
+  visible: (i: number) => ({
+    opacity: 1, x: 0,
+    transition: { delay: i * 0.04, duration: 0.28, ease: EASE },
+  }),
+};
+
+const todoVariants: Variants = {
+  hidden: { opacity: 0, y: 6 },
+  visible: (i: number) => ({
+    opacity: 1, y: 0,
+    transition: { delay: i * 0.03, duration: 0.22, ease: EASE },
+  }),
+};
+
+/** Panel slide variants – slides left/right based on direction */
+const panelVariants: Variants = {
+  enter: (dir: number) => ({ opacity: 0, x: dir * 18 }),
+  center: { opacity: 1, x: 0, transition: { duration: 0.25, ease: EASE } },
+  exit: (dir: number) => ({ opacity: 0, x: dir * -18, transition: { duration: 0.18, ease: EASE } }),
+};
+
+const TABS = ['timeline', 'todos', 'map'] as const;
+type Tab = typeof TABS[number];
+
+/** Returns +1 (slide left→right) or -1 (slide right→left) */
+function direction(from: Tab, to: Tab) {
+  return TABS.indexOf(to) > TABS.indexOf(from) ? 1 : -1;
+}
+
+/* ── Shared form components ── */
+const FieldLabel = ({ children }: { children: React.ReactNode }) => (
+  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{children}</Label>
+);
+const Field = ({ children }: { children: React.ReactNode }) => (
+  <div className="space-y-1.5">{children}</div>
+);
+const inputCls = "h-9 rounded-xl border-border bg-white text-sm focus:ring-1 focus:ring-foreground/20";
+
+export function TripView({ tripId, onBack }: { tripId: string; onBack: () => void }) {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [items, setItems] = useState<TripItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -33,100 +86,138 @@ export function TripView({ tripId, onBack }: { tripId: string, onBack: () => voi
   const [isEditItemOpen, setIsEditItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<TripItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [mobileView, setMobileView] = useState<'timeline' | 'map' | 'todos'>('timeline');
+  const [activeTab, setActiveTab] = useState<Tab>('timeline');
+  const [prevTab, setPrevTab] = useState<Tab>('timeline');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-  
-  // To-Do state
-  const [todos, setTodos] = useState<{id: string, text: string, completed: boolean, order: number}[]>([]);
-  const [newTodoText, setNewTodoText] = useState('');
+  const [isEditTripOpen, setIsEditTripOpen] = useState(false);
+  const [editTripTitle, setEditTripTitle] = useState('');
+  const [editTripDescription, setEditTripDescription] = useState('');
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingTodoText, setEditingTodoText] = useState('');
+  const [transportRoutes, setTransportRoutes] = useState<Record<string, DrivingRouteInfo | undefined>>({});
+
+  const processedItems = React.useMemo(() => {
+    const tripCostForItemType = (type: TripItem['type']): number | undefined => {
+      if (type === 'flight') return trip?.flight_cost;
+      if (type === 'train') return trip?.train_cost;
+      if (type === 'transport') return trip?.transport_cost;
+      return undefined;
+    };
+
+    return items.map(item => {
+      if (['flight', 'train', 'transport'].includes(item.type) && item.booking_reference) {
+        const group = items.filter(i => ['flight', 'train', 'transport'].includes(i.type) && i.booking_reference === item.booking_reference);
+        if (group.length > 1) {
+          const sumItemCosts = group.reduce((sum, i) => sum + (i.cost || 0), 0);
+          const sameType = group.every(i => i.type === item.type);
+          const tripBookingTotal = sameType ? tripCostForItemType(item.type) : undefined;
+          const totalGroupCost =
+            tripBookingTotal != null && tripBookingTotal > 0 ? tripBookingTotal : sumItemCosts;
+          const itemWithFile = group.find(i => i.file_data);
+          
+          return {
+            ...item,
+            displayCost: totalGroupCost > 0 ? totalGroupCost / group.length : undefined,
+            isSharedCost: totalGroupCost > 0,
+            file_data: itemWithFile?.file_data || item.file_data,
+            file_name: itemWithFile?.file_name || item.file_name,
+          };
+        }
+      }
+      return { 
+        ...item, 
+        displayCost: item.cost, 
+        isSharedCost: false 
+      };
+    });
+  }, [items, trip?.flight_cost, trip?.train_cost, trip?.transport_cost]);
+
+  const tripDateRange = React.useMemo(() => {
+    if (items.length === 0) return null;
+    const starts = items.map(i => i.start_time).filter(Boolean) as string[];
+    const ends = items.map(i => i.end_time).filter(Boolean) as string[];
+    if (starts.length === 0) return null;
+    
+    const min = new Date(Math.min(...starts.map(d => +new Date(d))));
+    const max = ends.length 
+      ? new Date(Math.max(...ends.map(d => +new Date(d))))
+      : min;
+      
+    return { min, max };
+  }, [items]);
+
+  const changeTab = (next: Tab) => {
+    setPrevTab(activeTab);
+    setActiveTab(next);
+  };
 
   useEffect(() => {
-    const unsubscribeTodos = onSnapshot(
-      query(collection(db, `trips/${tripId}/todos`), orderBy('completed', 'asc'), orderBy('order', 'asc')),
-      (snapshot) => {
-        setTodos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
-      }
-    );
-    return () => unsubscribeTodos();
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
+
+  /* ── Todos ── */
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [newTodoText, setNewTodoText] = useState('');
+
+  useEffect(() => {
+    const fetch = async () => {
+      const { data } = await supabase.from('todos').select('*').eq('trip_id', tripId).order('todo_order', { ascending: true });
+      if (data) setTodos(data);
+    };
+    fetch();
+    const ch = supabase.channel(`todos_${tripId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos', filter: `trip_id=eq.${tripId}` }, fetch)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, [tripId]);
 
   const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTodoText.trim()) return;
-    try {
-      await addDoc(collection(db, `trips/${tripId}/todos`), {
-        text: newTodoText.trim(),
-        completed: false,
-        order: todos.length,
-        createdAt: new Date().toISOString()
-      });
-      setNewTodoText('');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `trips/${tripId}/todos`);
-    }
+    const opt: Todo = { id: `tmp-${Date.now()}`, trip_id: tripId, text: newTodoText.trim(), completed: false, todo_order: todos.length, created_at: new Date().toISOString() };
+    setTodos(p => [...p, opt]);
+    setNewTodoText('');
+    await supabase.from('todos').insert({ trip_id: tripId, text: opt.text, completed: false, todo_order: todos.length, created_at: opt.created_at });
   };
-
-  const toggleTodo = async (todo: any) => {
-    try {
-      await updateDoc(doc(db, `trips/${tripId}/todos`, todo.id), {
-        completed: !todo.completed
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `trips/${tripId}/todos/${todo.id}`);
-    }
+  const toggleTodo = async (todo: Todo) => {
+    setTodos(p => p.map(t => t.id === todo.id ? { ...t, completed: !t.completed } : t));
+    await supabase.from('todos').update({ completed: !todo.completed }).eq('id', todo.id);
   };
-
   const deleteTodo = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, `trips/${tripId}/todos`, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `trips/${tripId}/todos/${id}`);
-    }
+    setTodos(p => p.filter(t => t.id !== id));
+    await supabase.from('todos').delete().eq('id', id);
   };
-
-  const handleEditTodo = async (id: string, newText: string) => {
-    if (!newText.trim()) return;
-    try {
-      await updateDoc(doc(db, `trips/${tripId}/todos`, id), {
-        text: newText.trim()
-      });
-      setEditingTodoId(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `trips/${tripId}/todos/${id}`);
-    }
-  };
-
   const handleTodoDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
-    const newTodos = [...todos];
-    const [reordered] = newTodos.splice(result.source.index, 1);
-    newTodos.splice(result.destination.index, 0, reordered);
-    setTodos(newTodos);
-    try {
-      const batch = writeBatch(db);
-      newTodos.forEach((t, i) => {
-        batch.update(doc(db, `trips/${tripId}/todos`, t.id), { order: i });
-      });
-      await batch.commit();
-    } catch (error) {
-      console.error("Error updating todo order", error);
+    const arr = [...todos];
+    const [it] = arr.splice(result.source.index, 1);
+    arr.splice(result.destination.index, 0, it);
+    setTodos(arr);
+    for (let i = 0; i < arr.length; i++) await supabase.from('todos').update({ todo_order: i }).eq('id', arr[i].id);
+  };
+  const handleUpdateTodoText = async (id: string) => {
+    if (!editingTodoText.trim()) { setEditingTodoId(null); return; }
+    setTodos(p => p.map(t => t.id === id ? { ...t, text: editingTodoText.trim() } : t));
+    await supabase.from('todos').update({ text: editingTodoText.trim() }).eq('id', id);
+    setEditingTodoId(null);
+  };
+
+  const handleDeleteItem = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const { error } = await supabase.from('trip_items').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting item:', error);
+      alert('Fehler beim Löschen');
+    } else {
+      setItems(prev => prev.filter(i => i.id !== id));
     }
   };
-  
-  // New item form state
+
+  /* ── Item form state ── */
   const [newItemType, setNewItemType] = useState<TripItem['type']>('location');
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemLocation, setNewItemLocation] = useState('');
@@ -139,997 +230,883 @@ export function TripView({ tripId, onBack }: { tripId: string, onBack: () => voi
   const [newItemFileData, setNewItemFileData] = useState<string | undefined>();
   const [newItemFileName, setNewItemFileName] = useState<string | undefined>();
 
-  const totalCost = items.reduce((sum, item) => {
-    if (item.type === 'flight' || item.type === 'train' || item.type === 'transport') return sum;
-    return sum + (item.cost || 0);
-  }, 0) + (trip?.flightCost || 0) + (trip?.trainCost || 0) + (trip?.transportCost || 0);
+  const totalCost = items.reduce((s, i) => (i.type === 'flight' || i.type === 'train' || i.type === 'transport' ? s : s + (i.cost || 0)), 0)
+    + (trip?.flight_cost || 0) + (trip?.train_cost || 0) + (trip?.transport_cost || 0);
 
   useEffect(() => {
-    const unsubscribeTrip = onSnapshot(doc(db, 'trips', tripId), (docSnap) => {
-      if (docSnap.exists()) {
-        setTrip({ id: docSnap.id, ...docSnap.data() } as Trip);
+    const fetchTrip = async () => { 
+      const { data } = await supabase.from('trips').select('*').eq('id', tripId).single(); 
+      if (data) {
+        setTrip(data);
+        setEditTripTitle(data.title);
+        setEditTripDescription(data.description || '');
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, `trips/${tripId}`));
-
-    const q = query(
-      collection(db, `trips/${tripId}/items`),
-      orderBy('order', 'asc')
-    );
-
-    const unsubscribeItems = onSnapshot(q, (snapshot) => {
-      const itemsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as TripItem[];
-      setItems(itemsData);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `trips/${tripId}/items`));
-
-    return () => {
-      unsubscribeTrip();
-      unsubscribeItems();
     };
+    const fetchItems = async () => { const { data } = await supabase.from('items').select('*').eq('trip_id', tripId).order('item_order', { ascending: true }); if (data) setItems(data); };
+    fetchTrip(); fetchItems();
+    const ch = supabase.channel(`items_${tripId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'items', filter: `trip_id=eq.${tripId}` }, fetchItems)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, [tripId]);
 
-  // Update trip dates when items change
   useEffect(() => {
     if (!trip || items.length === 0) return;
+    const starts = items.map(i => i.start_time).filter(Boolean) as string[];
+    const ends   = items.map(i => i.end_time).filter(Boolean) as string[];
+    const min = starts.length ? new Date(Math.min(...starts.map(d => +new Date(d)))).toISOString() : null;
+    const max = ends.length   ? new Date(Math.max(...ends.map(d => +new Date(d)))).toISOString()   : min;
+    if (trip.start_date !== min || trip.end_date !== max)
+      supabase.from('trips').update({ start_date: min, end_date: max }).eq('id', tripId);
+  }, [items, trip?.start_date, trip?.end_date, tripId]);
 
-    const startDates = items.map(i => i.startTime).filter(Boolean) as string[];
-    const endDates = items.map(i => i.endTime).filter(Boolean) as string[];
-    
-    const minDate = startDates.length > 0 ? new Date(Math.min(...startDates.map(d => new Date(d).getTime()))).toISOString() : null;
-    const maxDate = endDates.length > 0 ? new Date(Math.max(...endDates.map(d => new Date(d).getTime()))).toISOString() : minDate;
-
-    if (trip.startDate !== minDate || trip.endDate !== maxDate) {
-      updateDoc(doc(db, 'trips', tripId), {
-        startDate: minDate,
-        endDate: maxDate
-      }).catch(console.error);
-    }
-  }, [items, trip?.startDate, trip?.endDate, tripId]);
+  useEffect(() => {
+    if (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY) return;
+    const list = items.filter(
+      (i) =>
+        i.type === 'transport' &&
+        typeof i.lat === 'number' &&
+        typeof i.lng === 'number' &&
+        typeof i.end_lat === 'number' &&
+        typeof i.end_lng === 'number' &&
+        !Number.isNaN(i.lat) &&
+        !Number.isNaN(i.lng) &&
+        !Number.isNaN(i.end_lat) &&
+        !Number.isNaN(i.end_lng),
+    );
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        list.map(async (it) => {
+          const info = await fetchDrivingRoute(
+            { lat: it.lat!, lng: it.lng! },
+            { lat: it.end_lat!, lng: it.end_lng! },
+            it.start_time ? new Date(it.start_time) : null,
+          );
+          return [it.id, info ?? undefined] as const;
+        }),
+      );
+      if (cancelled) return;
+      setTransportRoutes(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
 
   const handleDragEnd = async (result: DropResult) => {
-    if (!result.destination) return;
-
-    const sourceIndex = result.source.index;
-    const destinationIndex = result.destination.index;
-
-    if (sourceIndex === destinationIndex) return;
-
-    const newItems = [...items];
-    const [reorderedItem] = newItems.splice(sourceIndex, 1);
-    newItems.splice(destinationIndex, 0, reorderedItem);
-
-    // Optimistic update
-    setItems(newItems);
-
-    // Update orders in Firestore
-    try {
-      const batch = writeBatch(db);
-      newItems.forEach((item, index) => {
-        batch.update(doc(db, `trips/${tripId}/items`, item.id), { order: index });
-      });
-      await batch.commit();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `trips/${tripId}/items`);
-    }
+    if (!result.destination || result.source.index === result.destination.index) return;
+    const arr = [...items];
+    const [it] = arr.splice(result.source.index, 1);
+    arr.splice(result.destination.index, 0, it);
+    setItems(arr);
+    for (let i = 0; i < arr.length; i++) await supabase.from('items').update({ item_order: i }).eq('id', arr[i].id);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5000000) { // ~5MB limit
-        alert("Datei ist zu groß. Bitte max. 5MB.");
-        return;
-      }
-      setNewItemFileName(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewItemFileData(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    if (file.size > 5_000_000) { alert('Max. 5 MB.'); return; }
+    setNewItemFileName(file.name);
+    const r = new FileReader();
+    r.onloadend = () => setNewItemFileData(r.result as string);
+    r.readAsDataURL(file);
+  };
+
+  const geocode = async (address: string) => {
+    try {
+      const lib = await importLibrary('geocoding') as google.maps.GeocodingLibrary;
+      const res = await new lib.Geocoder().geocode({ address });
+      if (res.results?.length) return { lat: res.results[0].geometry.location.lat(), lng: res.results[0].geometry.location.lng() };
+    } catch { /* noop */ }
+    return null;
   };
 
   const handleAddItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
+    e.preventDefault(); setIsSaving(true);
     try {
-      let lat: number | undefined;
-      let lng: number | undefined;
-      let endLat: number | undefined;
-      let endLng: number | undefined;
-
-      if (newItemLocation) {
-        const address = newItemLocation.trim();
-        try {
-          const geocodingLib = await importLibrary('geocoding') as google.maps.GeocodingLibrary;
-          const geocoder = new geocodingLib.Geocoder();
-          const result = await geocoder.geocode({ address });
-          if (result.results && result.results.length > 0) {
-            lat = result.results[0].geometry.location.lat();
-            lng = result.results[0].geometry.location.lng();
-            console.log(`Geocoded "${address}" to ${lat}, ${lng}`);
-          }
-        } catch (e) {
-          console.error("Geocoding failed for start location", e);
-        }
+      const start = newItemLocation ? await geocode(newItemLocation) : null;
+      const end   = newItemEndLocation ? await geocode(newItemEndLocation) : null;
+      if (['flight', 'train', 'transport'].includes(newItemType) && newItemCost) {
+        const cf = newItemType === 'flight' ? 'flight_cost' : newItemType === 'train' ? 'train_cost' : 'transport_cost';
+        await supabase.from('trips').update({ [cf]: parseFloat(newItemCost) || 0 }).eq('id', tripId);
       }
-
-      if (newItemEndLocation) {
-        const address = newItemEndLocation.trim();
-        try {
-          const geocodingLib = await importLibrary('geocoding') as google.maps.GeocodingLibrary;
-          const geocoder = new geocodingLib.Geocoder();
-          const result = await geocoder.geocode({ address });
-          if (result.results && result.results.length > 0) {
-            endLat = result.results[0].geometry.location.lat();
-            endLng = result.results[0].geometry.location.lng();
-            console.log(`Geocoded end "${address}" to ${endLat}, ${endLng}`);
-          }
-        } catch (e) {
-          console.error("Geocoding failed for end location", e);
-        }
-      }
-
-      // Pro-rata cost logic for flight, train, transport
-      if ((newItemType === 'flight' || newItemType === 'train' || newItemType === 'transport') && newItemCost) {
-        const costField = newItemType === 'flight' ? 'flightCost' : newItemType === 'train' ? 'trainCost' : 'transportCost';
-        await updateDoc(doc(db, 'trips', tripId), {
-          [costField]: parseFloat(newItemCost) || 0
-        });
-      }
-
-      const newItem: Partial<TripItem> = {
-        tripId,
-        type: newItemType,
-        title: newItemTitle,
-        locationName: newItemLocation || undefined,
-        lat,
-        lng,
-        endLocationName: newItemEndLocation || undefined,
-        endLat,
-        endLng,
-        startTime: newItemStartTime ? new Date(newItemStartTime).toISOString() : undefined,
-        endTime: newItemEndTime ? new Date(newItemEndTime).toISOString() : undefined,
-        isAllDay: newItemAllDay,
+      const payload: any = {
+        trip_id: tripId, type: newItemType, title: newItemTitle,
+        location_name: newItemLocation || undefined, lat: start?.lat, lng: start?.lng,
+        end_location_name: newItemEndLocation || undefined, end_lat: end?.lat, end_lng: end?.lng,
+        start_time: newItemStartTime ? new Date(newItemStartTime).toISOString() : undefined,
+        end_time:   newItemEndTime   ? new Date(newItemEndTime).toISOString()   : undefined,
+        is_all_day: newItemAllDay,
         cost: newItemCost ? parseFloat(newItemCost) : undefined,
-        bookingReference: newItemBookingRef || undefined,
-        fileData: newItemFileData,
-        fileName: newItemFileName,
-        order: items.length,
-        createdAt: new Date().toISOString(),
+        booking_reference: newItemBookingRef || undefined,
+        file_data: newItemFileData, file_name: newItemFileName,
+        item_order: items.length, created_at: new Date().toISOString(),
       };
-
-      // If booking ref exists, sync file with other items sharing the same ref
       if (newItemBookingRef && !newItemFileData) {
-        const sameRefItems = items.filter(i => i.bookingReference === newItemBookingRef);
-        if (sameRefItems.length > 0) {
-          newItem.fileData = sameRefItems[0].fileData;
-          newItem.fileName = sameRefItems[0].fileName;
-        }
+        const same = items.find(i => i.booking_reference === newItemBookingRef);
+        if (same) { payload.file_data = same.file_data; payload.file_name = same.file_name; }
       }
-
-      const cleanItem = Object.fromEntries(Object.entries(newItem).filter(([_, v]) => v !== undefined));
-      await addDoc(collection(db, `trips/${tripId}/items`), cleanItem);
-      
-      setIsAddItemOpen(false);
-      resetForm();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `trips/${tripId}/items`);
-    } finally {
-      setIsSaving(false);
-    }
+      await supabase.from('items').insert(payload);
+      setIsAddItemOpen(false); resetForm();
+    } catch (err) { console.error(err); }
+    finally { setIsSaving(false); }
   };
 
   const handleEditItem = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!editingItem) return; setIsSaving(true);
+    try {
+      let lat = editingItem.lat, lng = editingItem.lng, eLat = editingItem.end_lat, eLng = editingItem.end_lng;
+      if (newItemLocation !== editingItem.location_name || lat == null) {
+        const r = newItemLocation ? await geocode(newItemLocation) : null;
+        lat = r?.lat; lng = r?.lng;
+      }
+      if (newItemEndLocation !== editingItem.end_location_name || eLat == null) {
+        const r = newItemEndLocation ? await geocode(newItemEndLocation) : null;
+        eLat = r?.lat; eLng = r?.lng;
+      }
+      if (['flight', 'train', 'transport'].includes(newItemType) && newItemCost) {
+        const cf = newItemType === 'flight' ? 'flight_cost' : newItemType === 'train' ? 'train_cost' : 'transport_cost';
+        await supabase.from('trips').update({ [cf]: parseFloat(newItemCost) || 0 }).eq('id', tripId);
+      }
+      const updates: Partial<TripItem> = {
+        type: newItemType, title: newItemTitle,
+        location_name: newItemLocation || undefined, lat, lng,
+        end_location_name: newItemEndLocation || undefined, end_lat: eLat, end_lng: eLng,
+        start_time: newItemStartTime ? new Date(newItemStartTime).toISOString() : undefined,
+        end_time:   newItemEndTime   ? new Date(newItemEndTime).toISOString()   : undefined,
+        is_all_day: newItemAllDay,
+        cost: newItemCost ? parseFloat(newItemCost) : undefined,
+        booking_reference: newItemBookingRef || undefined,
+        file_data: newItemFileData, file_name: newItemFileName,
+      };
+      await supabase.from('items').update(updates).eq('id', editingItem.id);
+      if (newItemBookingRef && newItemFileData !== editingItem.file_data) {
+        for (const it of items.filter(i => i.booking_reference === newItemBookingRef && i.id !== editingItem.id)) {
+          await supabase.from('items').update({ file_data: newItemFileData, file_name: newItemFileName }).eq('id', it.id);
+        }
+      }
+      setIsEditItemOpen(false); setEditingItem(null); resetForm();
+    } catch (err) { console.error(err); }
+    finally { setIsSaving(false); }
+  };
+
+  const handleUpdateTrip = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem) return;
     setIsSaving(true);
     try {
-      let lat = editingItem.lat;
-      let lng = editingItem.lng;
-      let endLat = editingItem.endLat;
-      let endLng = editingItem.endLng;
-
-      if (newItemLocation !== editingItem.locationName || lat === undefined) {
-        if (newItemLocation) {
-          const address = newItemLocation.trim();
-          try {
-            const geocodingLib = await importLibrary('geocoding') as google.maps.GeocodingLibrary;
-            const geocoder = new geocodingLib.Geocoder();
-            const result = await geocoder.geocode({ address });
-            if (result.results && result.results.length > 0) {
-              lat = result.results[0].geometry.location.lat();
-              lng = result.results[0].geometry.location.lng();
-              console.log(`Geocoded "${address}" to ${lat}, ${lng}`);
-            }
-          } catch (e) {
-            console.error("Geocoding failed for start location", e);
-          }
-        } else {
-          lat = undefined;
-          lng = undefined;
-        }
-      }
-
-      if (newItemEndLocation !== editingItem.endLocationName || endLat === undefined) {
-        if (newItemEndLocation) {
-          const address = newItemEndLocation.trim();
-          try {
-            const geocodingLib = await importLibrary('geocoding') as google.maps.GeocodingLibrary;
-            const geocoder = new geocodingLib.Geocoder();
-            const result = await geocoder.geocode({ address });
-            if (result.results && result.results.length > 0) {
-              endLat = result.results[0].geometry.location.lat();
-              endLng = result.results[0].geometry.location.lng();
-              console.log(`Geocoded end "${address}" to ${endLat}, ${endLng}`);
-            }
-          } catch (e) {
-            console.error("Geocoding failed for end location", e);
-          }
-        } else {
-          endLat = undefined;
-          endLng = undefined;
-        }
-      }
-
-      if ((newItemType === 'flight' || newItemType === 'train' || newItemType === 'transport') && newItemCost) {
-        const costField = newItemType === 'flight' ? 'flightCost' : newItemType === 'train' ? 'trainCost' : 'transportCost';
-        await updateDoc(doc(db, 'trips', tripId), {
-          [costField]: parseFloat(newItemCost) || 0
-        });
-      }
-
-      const updates: Partial<TripItem> = {
-        type: newItemType,
-        title: newItemTitle,
-        locationName: newItemLocation || undefined,
-        lat,
-        lng,
-        endLocationName: newItemEndLocation || undefined,
-        endLat,
-        endLng,
-        startTime: newItemStartTime ? new Date(newItemStartTime).toISOString() : undefined,
-        endTime: newItemEndTime ? new Date(newItemEndTime).toISOString() : undefined,
-        isAllDay: newItemAllDay,
-        cost: newItemCost ? parseFloat(newItemCost) : undefined,
-        bookingReference: newItemBookingRef || undefined,
-        fileData: newItemFileData,
-        fileName: newItemFileName,
-      };
-
-      const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
-      await updateDoc(doc(db, `trips/${tripId}/items`, editingItem.id), cleanUpdates);
-
-      // Sync file across same booking reference if it changed
-      if (newItemBookingRef && (newItemFileData !== editingItem.fileData)) {
-        const sameRefItems = items.filter(i => i.bookingReference === newItemBookingRef && i.id !== editingItem.id);
-        const syncData = Object.fromEntries(Object.entries({
-          fileData: newItemFileData,
-          fileName: newItemFileName
-        }).filter(([_, v]) => v !== undefined));
-        
-        if (Object.keys(syncData).length > 0) {
-          for (const item of sameRefItems) {
-            await updateDoc(doc(db, `trips/${tripId}/items`, item.id), syncData);
-          }
-        }
-      }
-
-      setIsEditItemOpen(false);
-      resetForm();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `trips/${tripId}/items/${editingItem.id}`);
+      await supabase.from('trips').update({
+        title: editTripTitle,
+        description: editTripDescription
+      }).eq('id', tripId);
+      setTrip(prev => prev ? { ...prev, title: editTripTitle, description: editTripDescription } : null);
+      setIsEditTripOpen(false);
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsSaving(false);
     }
   };
 
   const resetForm = () => {
-    setNewItemType('location');
-    setNewItemTitle('');
-    setNewItemLocation('');
-    setNewItemEndLocation('');
-    setNewItemStartTime('');
-    setNewItemEndTime('');
-    setNewItemAllDay(false);
-    setNewItemCost('');
-    setNewItemBookingRef('');
-    setNewItemFileData(undefined);
-    setNewItemFileName(undefined);
-    setEditingItem(null);
+    setNewItemType('location'); setNewItemTitle(''); setNewItemLocation('');
+    setNewItemEndLocation(''); setNewItemStartTime(''); setNewItemEndTime('');
+    setNewItemAllDay(false); setNewItemCost(''); setNewItemBookingRef('');
+    setNewItemFileData(undefined); setNewItemFileName(undefined);
   };
 
   const openEditDialog = (item: TripItem) => {
-    setEditingItem(item);
-    setNewItemType(item.type);
-    setNewItemTitle(item.title);
-    setNewItemLocation(item.locationName || '');
-    setNewItemEndLocation(item.endLocationName || '');
-    setNewItemStartTime(item.startTime ? format(new Date(item.startTime), item.isAllDay ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm") : '');
-    setNewItemEndTime(item.endTime ? format(new Date(item.endTime), item.isAllDay ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm") : '');
-    setNewItemAllDay(item.isAllDay || false);
-    setNewItemCost(item.type === 'flight' ? (trip?.flightCost?.toString() || '') : item.type === 'train' ? (trip?.trainCost?.toString() || '') : item.type === 'transport' ? (trip?.transportCost?.toString() || '') : (item.cost?.toString() || ''));
-    setNewItemBookingRef(item.bookingReference || '');
-    setNewItemFileData(item.fileData);
-    setNewItemFileName(item.fileName);
+    setEditingItem(item); setNewItemType(item.type); setNewItemTitle(item.title);
+    setNewItemLocation(item.location_name || ''); setNewItemEndLocation(item.end_location_name || '');
+    setNewItemStartTime(item.start_time ? format(new Date(item.start_time), item.is_all_day ? 'yyyy-MM-dd' : "yyyy-MM-dd'T'HH:mm") : '');
+    setNewItemEndTime(item.end_time ? format(new Date(item.end_time), item.is_all_day ? 'yyyy-MM-dd' : "yyyy-MM-dd'T'HH:mm") : '');
+    setNewItemAllDay(item.is_all_day || false);
+    setNewItemCost(
+      item.type === 'flight' ? (trip?.flight_cost?.toString() || '') :
+      item.type === 'train'  ? (trip?.train_cost?.toString()  || '') :
+      item.type === 'transport' ? (trip?.transport_cost?.toString() || '') :
+      (item.cost?.toString() || '')
+    );
+    setNewItemBookingRef(item.booking_reference || '');
+    setNewItemFileData(item.file_data); setNewItemFileName(item.file_name);
     setIsEditItemOpen(true);
   };
 
-  const handleDeleteItem = async (itemId: string) => {
-    try {
-      await deleteDoc(doc(db, `trips/${tripId}/items`, itemId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `trips/${tripId}/items/${itemId}`);
-    }
-  };
-
   const [isCopied, setIsCopied] = useState(false);
-
   const copyTripId = () => {
     navigator.clipboard.writeText(tripId);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  if (!trip) return <div>Lädt...</div>;
-
-  const handleUpdateFlightCost = async (cost: string) => {
-    try {
-      await updateDoc(doc(db, 'trips', tripId), {
-        flightCost: parseFloat(cost) || 0
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `trips/${tripId}`);
+  const formatDateRange = (start?: string, end?: string, allDay?: boolean) => {
+    if (!start) return null;
+    const startDate = new Date(start);
+    if (!end) {
+      return (
+        <span>
+          {allDay
+            ? format(startDate, 'eee. dd.MM', { locale: de })
+            : format(startDate, "eee. dd.MM HH:mm 'Uhr'", { locale: de })}
+        </span>
+      );
     }
+    const endDate = new Date(end);
+    if (allDay) {
+      if (isSameDay(startDate, endDate)) {
+        return <span>{format(startDate, 'eee. dd.MM', { locale: de })}</span>;
+      }
+      return (
+        <div className="flex flex-col">
+          <span>{format(startDate, 'eee. dd.MM', { locale: de })}</span>
+          <span className="text-muted-foreground/70">{format(endDate, 'eee. dd.MM', { locale: de })}</span>
+        </div>
+      );
+    }
+    
+    if (isSameDay(startDate, endDate)) {
+      return (
+        <div className="flex flex-col">
+          <span>{format(startDate, 'eee. dd.MM HH:mm', { locale: de })} Uhr</span>
+          <span className="text-muted-foreground/70">Bis {format(endDate, 'HH:mm', { locale: de })} Uhr</span>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col">
+        <span>{format(startDate, 'eee. dd.MM HH:mm', { locale: de })} Uhr</span>
+        <span className="text-muted-foreground/70">Bis {format(endDate, 'eee. dd.MM HH:mm', { locale: de })} Uhr</span>
+      </div>
+    );
   };
 
-  const formatDate = (dateStr: string, isAllDay?: boolean) => {
-    const date = new Date(dateStr);
-    if (isAllDay) {
-      return format(date, 'eee. dd.MM', { locale: de });
+  const getDurationLabel = (item: TripItem): string | null => {
+    if (!item.start_time || !item.end_time) return null;
+    const start = new Date(item.start_time);
+    const end = new Date(item.end_time);
+
+    if (item.type === 'accommodation') {
+      const nights = differenceInCalendarDays(end, start);
+      if (nights > 0) return `${nights} Nacht${nights > 1 ? 'e' : ''}`.replace('Nachte', 'Nächte');
+      return null;
     }
-    return format(date, "eee. dd.MM HH:mm 'Uhr'", { locale: de });
+
+    if (['flight', 'train', 'transport'].includes(item.type)) {
+      const mins = differenceInMinutes(end, start);
+      if (mins <= 0) return null;
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      if (h > 0 && m > 0) return `${h} Std. ${m} Min.`;
+      if (h > 0) return `${h} Std.`;
+      return `${m} Min.`;
+    }
+
+    return null;
   };
+
+  /* ── Day label helper ── */
+  const getDayLabel = (item: TripItem, prevItem: TripItem | null): string | null => {
+    if (!item.start_time) return null;
+    const curr = new Date(item.start_time);
+    if (!prevItem?.start_time || !isSameDay(curr, new Date(prevItem.start_time))) {
+      return format(curr, 'eee, dd. MMM', { locale: de });
+    }
+    return null;
+  };
+
+  /* ── Item form ── */
+  const ItemForm = ({ onSubmit, label }: { onSubmit: (e: React.FormEvent) => void; label: string }) => (
+    <form onSubmit={onSubmit} className="space-y-4 pt-2">
+      <div className="flex items-center justify-between bg-muted/60 rounded-xl p-3">
+        <div>
+          <p className="text-sm font-medium">Ganztägig</p>
+          <p className="text-xs text-muted-foreground">Nur Datum anzeigen</p>
+        </div>
+        <Switch checked={newItemAllDay} onCheckedChange={setNewItemAllDay} />
+      </div>
+      <Field>
+        <FieldLabel>Typ</FieldLabel>
+        <Select value={newItemType} onValueChange={(v: any) => setNewItemType(v)}>
+          <SelectTrigger className={inputCls}><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="location">Ort</SelectItem>
+            <SelectItem value="flight">Flug</SelectItem>
+            <SelectItem value="accommodation">Unterkunft</SelectItem>
+            <SelectItem value="activity">Aktivität</SelectItem>
+            <SelectItem value="transport">Transport</SelectItem>
+            <SelectItem value="train">Zug</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field>
+        <FieldLabel>Titel</FieldLabel>
+        <Input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} required className={inputCls} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field>
+          <FieldLabel>{newItemType === 'flight' || newItemType === 'transport' || newItemType === 'train' ? 'Start' : 'Ort'}</FieldLabel>
+          <Input value={newItemLocation} onChange={e => setNewItemLocation(e.target.value)} className={inputCls} />
+        </Field>
+        {(newItemType === 'flight' || newItemType === 'transport' || newItemType === 'train') && (
+          <Field>
+            <FieldLabel>Ziel</FieldLabel>
+            <Input value={newItemEndLocation} onChange={e => setNewItemEndLocation(e.target.value)} className={inputCls} />
+          </Field>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field>
+          <FieldLabel>{newItemType === 'accommodation' ? 'Check-in' : 'Start'}</FieldLabel>
+          <Input type={newItemAllDay ? 'date' : 'datetime-local'} value={newItemStartTime} onChange={e => setNewItemStartTime(e.target.value)} className={inputCls} />
+        </Field>
+        <Field>
+          <FieldLabel>{newItemType === 'accommodation' ? 'Check-out' : 'Ende'}</FieldLabel>
+          <Input type={newItemAllDay ? 'date' : 'datetime-local'} value={newItemEndTime} onChange={e => setNewItemEndTime(e.target.value)} className={inputCls} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field>
+          <FieldLabel>Kosten (€)</FieldLabel>
+          <Input type="number" step="0.01" value={newItemCost} onChange={e => setNewItemCost(e.target.value)} placeholder="0.00" className={inputCls} />
+        </Field>
+        <Field>
+          <FieldLabel>Buchung</FieldLabel>
+          <Input value={newItemBookingRef} onChange={e => setNewItemBookingRef(e.target.value)} placeholder="XYZ123" className={inputCls} />
+        </Field>
+      </div>
+      <Field>
+        <FieldLabel>PDF Datei</FieldLabel>
+        <div className="flex items-center gap-2">
+          <Input type="file" accept="application/pdf" onChange={handleFileChange}
+            className={`${inputCls} flex-1 text-xs file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-muted file:text-foreground`} />
+          {newItemFileData && (
+            <motion.button type="button" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+              onClick={() => { setNewItemFileData(undefined); setNewItemFileName(undefined); }}
+              className="p-2 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/30 transition-colors">
+              <X className="h-3.5 w-3.5" />
+            </motion.button>
+          )}
+        </div>
+        {newItemFileName && <p className="text-xs text-muted-foreground">{newItemFileName}</p>}
+      </Field>
+      <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+        type="submit" disabled={isSaving}
+        className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+        style={{ background: 'var(--gradient-primary)', boxShadow: '0 2px 10px oklch(0.24 0.030 255 / 18%)' }}>
+        {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Wird gespeichert…</> : label}
+      </motion.button>
+    </form>
+  );
+
+  /* ── Tab button ── */
+  const TabBtn = ({ k, icon: Icon, label }: { k: Tab; icon: React.ElementType; label: string }) => (
+    <motion.button
+      whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+      onClick={() => changeTab(k)}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+      style={activeTab === k
+        ? { background: 'var(--gradient-primary)', color: 'white' }
+        : { color: 'oklch(0.52 0.012 255)' }}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </motion.button>
+  );
+
+  if (!trip) return (
+    <div className="flex h-screen items-center justify-center">
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }} className="text-muted-foreground/40">
+        <Navigation className="h-7 w-7" />
+      </motion.div>
+    </div>
+  );
+
+  const dir = direction(prevTab, activeTab);
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="border-b px-4 py-2 flex items-center justify-between bg-card sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-base lg:text-lg font-bold truncate max-w-[150px] lg:max-w-none">{trip.title}</h1>
-              <Button variant="ghost" size="icon" className="h-5 w-5" onClick={copyTripId} title="Reise-ID kopieren">
-                {isCopied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              {totalCost > 0 && (
-                <div className="text-[10px] lg:text-xs font-semibold bg-primary/10 text-primary px-1.5 py-0.5 rounded">
-                  {totalCost.toFixed(2)}€
+      {/* ── Header ── */}
+      <header className="glass-header sticky top-0 z-50 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }}
+              onClick={onBack}
+              className="w-8 h-8 rounded-xl border border-border bg-white flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+              <ArrowLeft className="h-4 w-4" />
+            </motion.button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-sm font-semibold truncate max-w-[160px] lg:max-w-xs">{trip.title}</h1>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <motion.button whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }} 
+                    onClick={() => setIsEditTripOpen(true)}
+                    className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Pencil className="h-3 w-3" />
+                  </motion.button>
+                  <motion.button whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }} onClick={copyTripId}
+                    className="text-muted-foreground hover:text-foreground transition-colors">
+                    <AnimatePresence mode="wait">
+                      {isCopied
+                        ? <motion.div key="c" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}><Check className="h-3.5 w-3.5 text-green-500" /></motion.div>
+                        : <motion.div key="u" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}><Copy className="h-3.5 w-3.5" /></motion.div>}
+                    </AnimatePresence>
+                  </motion.button>
                 </div>
-              )}
-              {trip.description && <p className="text-[10px] lg:text-xs text-muted-foreground truncate max-w-[100px] lg:max-w-none">{trip.description}</p>}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                {tripDateRange && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-foreground text-background whitespace-nowrap">
+                    {format(tripDateRange.min, 'dd.MM.')} - {format(tripDateRange.max, 'dd.MM.yyyy')}
+                  </span>
+                )}
+                {totalCost > 0 && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-muted text-foreground/70 whitespace-nowrap">
+                    {totalCost.toFixed(2)} €
+                  </span>
+                )}
+                {trip.description && (
+                  <span className="text-[10px] text-muted-foreground truncate max-w-[100px] hidden sm:block italic border-l border-border pl-2">{trip.description}</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex gap-2 items-center">
-          {!isOnline && (
-            <div className="flex items-center gap-1 px-2 py-0.5 bg-destructive/10 text-destructive rounded-full text-[10px] font-medium border border-destructive/20">
-              <WifiOff className="h-3 w-3" />
-              <span>Offline</span>
-            </div>
-          )}
-          <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-            <DialogTrigger render={<Button size="sm" className="gap-1.5 h-8"><Plus className="h-3.5 w-3.5" />Hinzufügen</Button>} />
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Zum Reiseplan hinzufügen</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAddItem} className="space-y-4 pt-4">
-                <div className="flex items-center justify-between bg-muted/30 p-3 rounded-lg">
-                  <div className="space-y-0.5">
-                    <Label>Ganztägig</Label>
-                    <p className="text-[10px] text-muted-foreground">Nur Datum anzeigen, keine Uhrzeit</p>
-                  </div>
-                  <Switch checked={newItemAllDay} onCheckedChange={setNewItemAllDay} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Typ</Label>
-                  <Select value={newItemType} onValueChange={(v: any) => setNewItemType(v)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="location">Ort</SelectItem>
-                      <SelectItem value="flight">Flug</SelectItem>
-                      <SelectItem value="accommodation">Unterkunft</SelectItem>
-                      <SelectItem value="activity">Aktivität</SelectItem>
-                      <SelectItem value="transport">Transport</SelectItem>
-                      <SelectItem value="train">Zug</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Titel</Label>
-                  <Input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} required />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'flight' || newItemType === 'transport' || newItemType === 'train' ? 'Startort' : 'Ort'}</Label>
-                    <Input value={newItemLocation} onChange={e => setNewItemLocation(e.target.value)} />
-                  </div>
-                  {(newItemType === 'flight' || newItemType === 'transport' || newItemType === 'train') && (
-                    <div className="space-y-2">
-                      <Label>Zielort</Label>
-                      <Input value={newItemEndLocation} onChange={e => setNewItemEndLocation(e.target.value)} />
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'accommodation' ? 'Check-in' : 'Startdatum'}</Label>
-                    <Input type={newItemAllDay ? "date" : "datetime-local"} value={newItemStartTime} onChange={e => setNewItemStartTime(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'accommodation' ? 'Check-out' : 'Ankunft/Ende'}</Label>
-                    <Input type={newItemAllDay ? "date" : "datetime-local"} value={newItemEndTime} onChange={e => setNewItemEndTime(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'flight' || newItemType === 'train' || newItemType === 'transport' ? 'Gesamtkosten (für alle Einträge)' : 'Kosten (€)'}</Label>
-                    <Input 
-                      type="number" 
-                      step="0.01" 
-                      value={newItemCost} 
-                      onChange={e => setNewItemCost(e.target.value)} 
-                      placeholder="0.00"
-                    />
-                    {(newItemType === 'flight' || newItemType === 'train' || newItemType === 'transport') && <p className="text-[10px] text-muted-foreground">Wird auf alle verknüpften Einträge aufgeteilt</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Buchungsreferenz</Label>
-                    <Input value={newItemBookingRef} onChange={e => setNewItemBookingRef(e.target.value)} placeholder="z.B. XYZ123" />
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label>Datei / Buchungsbestätigung (PDF)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input 
-                      type="file" 
-                      accept="application/pdf" 
-                      onChange={handleFileChange}
-                      className="flex-1"
-                    />
-                    {newItemFileData && (
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => { setNewItemFileData(undefined); setNewItemFileName(undefined); }}
-                        className="text-destructive"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                  {newItemFileName && <p className="text-[10px] text-muted-foreground">Ausgewählt: {newItemFileName}</p>}
-                </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <AnimatePresence>
+              {!isOnline && (
+                <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                  style={{ background: 'oklch(0.55 0.20 25 / 8%)', color: 'oklch(0.45 0.18 25)', border: '1px solid oklch(0.55 0.20 25 / 18%)' }}>
+                  <WifiOff className="h-3 w-3" />
+                  <span className="hidden sm:block">Offline</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-                <Button type="submit" className="w-full" disabled={isSaving}>
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Wird gespeichert...
-                    </>
-                  ) : (
-                    'Hinzufügen'
-                  )}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+            {/* Add item dialog */}
+            <Dialog open={isAddItemOpen} onOpenChange={v => { setIsAddItemOpen(v); if (!v) resetForm(); }}>
+              <DialogTrigger render={
+                <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white"
+                  style={{ background: 'var(--gradient-primary)', boxShadow: '0 2px 8px oklch(0.24 0.030 255 / 18%)' }}>
+                  <Plus className="h-3.5 w-3.5" />
+                  <span className="hidden sm:block">Hinzufügen</span>
+                </motion.button>
+              } />
+              <DialogContent className="glass-card border-0 p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-base font-semibold">Zum Reiseplan hinzufügen</DialogTitle>
+                </DialogHeader>
+                {ItemForm({ onSubmit: handleAddItem, label: "Hinzufügen" })}
+              </DialogContent>
+            </Dialog>
 
-          <Dialog open={isEditItemOpen} onOpenChange={setIsEditItemOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Eintrag bearbeiten</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleEditItem} className="space-y-4 pt-4">
-                <div className="flex items-center justify-between bg-muted/30 p-3 rounded-lg">
-                  <div className="space-y-0.5">
-                    <Label>Ganztägig</Label>
-                    <p className="text-[10px] text-muted-foreground">Nur Datum anzeigen, keine Uhrzeit</p>
-                  </div>
-                  <Switch checked={newItemAllDay} onCheckedChange={setNewItemAllDay} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Typ</Label>
-                  <Select value={newItemType} onValueChange={(v: any) => setNewItemType(v)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="location">Ort</SelectItem>
-                      <SelectItem value="flight">Flug</SelectItem>
-                      <SelectItem value="accommodation">Unterkunft</SelectItem>
-                      <SelectItem value="activity">Aktivität</SelectItem>
-                      <SelectItem value="transport">Transport</SelectItem>
-                      <SelectItem value="train">Zug</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Titel</Label>
-                  <Input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} required />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'flight' || newItemType === 'transport' || newItemType === 'train' ? 'Startort' : 'Ort'}</Label>
-                    <Input value={newItemLocation} onChange={e => setNewItemLocation(e.target.value)} />
-                  </div>
-                  {(newItemType === 'flight' || newItemType === 'transport' || newItemType === 'train') && (
-                    <div className="space-y-2">
-                      <Label>Zielort</Label>
-                      <Input value={newItemEndLocation} onChange={e => setNewItemEndLocation(e.target.value)} />
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'accommodation' ? 'Check-in' : 'Startdatum'}</Label>
-                    <Input type={newItemAllDay ? "date" : "datetime-local"} value={newItemStartTime} onChange={e => setNewItemStartTime(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'accommodation' ? 'Check-out' : 'Ankunft/Ende'}</Label>
-                    <Input type={newItemAllDay ? "date" : "datetime-local"} value={newItemEndTime} onChange={e => setNewItemEndTime(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{newItemType === 'flight' || newItemType === 'train' || newItemType === 'transport' ? 'Gesamtkosten (für alle Einträge)' : 'Kosten (€)'}</Label>
-                    <Input 
-                      type="number" 
-                      step="0.01" 
-                      value={newItemCost} 
-                      onChange={e => setNewItemCost(e.target.value)} 
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Buchungsreferenz</Label>
-                    <Input value={newItemBookingRef} onChange={e => setNewItemBookingRef(e.target.value)} placeholder="z.B. XYZ123" />
-                  </div>
-                </div>
+            {/* Edit dialog */}
+            <Dialog open={isEditItemOpen} onOpenChange={v => { setIsEditItemOpen(v); if (!v) { setEditingItem(null); resetForm(); } }}>
+              <DialogContent className="glass-card border-0 p-6 max-w-md max-h-[90vh] overflow-y-auto shadow-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-base font-semibold">Eintrag bearbeiten</DialogTitle>
+                </DialogHeader>
+                {ItemForm({ onSubmit: handleEditItem, label: "Änderungen speichern" })}
+              </DialogContent>
+            </Dialog>
 
-                <div className="space-y-2">
-                  <Label>Datei / Buchungsbestätigung (PDF)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input 
-                      type="file" 
-                      accept="application/pdf" 
-                      onChange={handleFileChange}
-                      className="flex-1"
-                    />
-                    {newItemFileData && (
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => { setNewItemFileData(undefined); setNewItemFileName(undefined); }}
-                        className="text-destructive"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                  {newItemFileName && <p className="text-[10px] text-muted-foreground">Ausgewählt: {newItemFileName}</p>}
-                </div>
-
-                <Button type="submit" className="w-full" disabled={isSaving}>
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Wird gespeichert...
-                    </>
-                  ) : (
-                    'Änderungen speichern'
-                  )}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+            {/* Edit Trip dialog */}
+            <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
+              <DialogContent className="glass-card border-0 p-6 max-w-md shadow-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-base font-semibold">Reise anpassen</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleUpdateTrip} className="space-y-4 pt-2">
+                  <Field>
+                    <FieldLabel>Name der Reise</FieldLabel>
+                    <Input value={editTripTitle} onChange={e => setEditTripTitle(e.target.value)} required className={inputCls} />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Beschreibung</FieldLabel>
+                    <Input value={editTripDescription} onChange={e => setEditTripDescription(e.target.value)} placeholder="z.B. Sommerurlaub 2024" className={inputCls} />
+                  </Field>
+                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                    type="submit" disabled={isSaving}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                    style={{ background: 'var(--gradient-primary)', boxShadow: '0 2px 10px oklch(0.24 0.030 255 / 18%)' }}>
+                    {isSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Wird gespeichert…</> : "Speichern"}
+                  </motion.button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Mobile Toggle */}
-        <div className="lg:hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background/90 backdrop-blur-sm rounded-full shadow-lg border p-1 flex gap-1">
-          <Button 
-            variant={mobileView === 'timeline' ? 'default' : 'ghost'} 
-            size="sm" 
-            className="rounded-full px-4"
-            onClick={() => setMobileView('timeline')}
-          >
-            Timeline
-          </Button>
-          <Button 
-            variant={mobileView === 'todos' ? 'default' : 'ghost'} 
-            size="sm" 
-            className="rounded-full px-4"
-            onClick={() => setMobileView('todos')}
-          >
-            To-Do
-          </Button>
-          <Button 
-            variant={mobileView === 'map' ? 'default' : 'ghost'} 
-            size="sm" 
-            className="rounded-full px-4"
-            onClick={() => setMobileView('map')}
-          >
-            Karte
-          </Button>
-        </div>
+      {/* ── Main ── */}
+      <div className="flex flex-1 overflow-hidden">
 
-        {/* Desktop Toggle (Sidebar) */}
-        <div className="hidden lg:flex absolute top-4 left-4 z-50 bg-background/90 backdrop-blur-sm rounded-md shadow-sm border p-1 gap-1">
-          <Button 
-            variant={mobileView === 'timeline' ? 'secondary' : 'ghost'} 
-            size="sm" 
-            className="h-8 px-3 text-xs gap-1.5"
-            onClick={() => setMobileView('timeline')}
-          >
-            <MapPin className="h-3.5 w-3.5" />
-            Plan
-          </Button>
-          <Button 
-            variant={mobileView === 'todos' ? 'secondary' : 'ghost'} 
-            size="sm" 
-            className="h-8 px-3 text-xs gap-1.5"
-            onClick={() => setMobileView('todos')}
-          >
-            <ListTodo className="h-3.5 w-3.5" />
-            To-Do
-          </Button>
-        </div>
+        {/* ── Left panel (timeline + todos) with animated tabs ── */}
+        <div className="w-full lg:w-[360px] xl:w-[400px] flex-shrink-0 flex flex-col border-r border-border bg-background relative">
 
-        {/* Timeline Sidebar */}
-        <div className={`w-full lg:w-1/3 border-r bg-muted/10 overflow-y-auto p-2 lg:p-4 pb-20 lg:pb-4 pt-16 lg:pt-16 ${mobileView === 'timeline' ? 'block' : 'hidden'} ${mobileView === 'todos' ? 'lg:hidden' : 'lg:block'}`}>
-          <DragDropContext onDragEnd={handleDragEnd}>
-            <Droppable droppableId="timeline">
-              {(provided) => (
-                <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-3">
-                  {items.map((item, index) => {
-                    const Icon = typeIcons[item.type] || MapPin;
-                    return (
-                      <Draggable key={item.id} draggableId={item.id} index={index}>
-                        {(provided) => (
-                          <div className="flex gap-2 group">
-                            {/* Weekday Indicator Column */}
-                            <div className="flex flex-col gap-1 pt-1 min-w-[28px] lg:min-w-[32px]">
-                              {(() => {
-                                if (!item.startTime) return null;
-                                
-                                const start = new Date(item.startTime);
-                                const end = item.endTime ? new Date(item.endTime) : start;
-                                
-                                try {
-                                  const days = eachDayOfInterval({ 
-                                    start: startOfDay(start), 
-                                    end: startOfDay(end) 
-                                  });
+          {/* Tab bar – desktop */}
+          <div className="hidden lg:flex gap-1 p-2 border-b border-border bg-background/95">
+            {TabBtn({ k: "timeline", icon: Navigation, label: "Plan" })}
+            {TabBtn({ k: "todos", icon: ListTodo, label: "To-Do" })}
+          </div>
 
-                                  return days.map((day, i) => (
-                                    <div 
-                                      key={i} 
-                                      className="text-[10px] font-bold text-muted-foreground bg-muted/50 rounded px-1 py-0.5 text-center leading-none"
-                                      title={format(day, 'dd.MM.yyyy')}
+          {/* Animated panel content */}
+          <div className="flex-1 overflow-hidden relative">
+            <AnimatePresence mode="wait" custom={dir}>
+              {activeTab === 'timeline' && (
+                <motion.div
+                  key="timeline"
+                  custom={dir}
+                  variants={panelVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  className="absolute inset-0 overflow-y-auto p-3 lg:p-4 pb-24 lg:pb-4"
+                >
+                  <DragDropContext onDragEnd={handleDragEnd}>
+                    <Droppable droppableId="timeline">
+                      {(provided) => (
+                        <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-1">
+                          {processedItems.map((item, index) => {
+                            const Icon = typeIcons[item.type] || MapPin;
+                            const dayLabel = getDayLabel(item as TripItem, index > 0 ? processedItems[index - 1] as TripItem : null);
+                            return (
+                              <React.Fragment key={item.id}>
+                                {/* Day separator */}
+                                {dayLabel && (
+                                  <div className="flex items-center gap-2 pt-3 pb-1 first:pt-0">
+                                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                                      {dayLabel}
+                                    </span>
+                                    <div className="flex-1 h-px bg-border" />
+                                  </div>
+                                )}
+                                <Draggable draggableId={item.id} index={index}>
+                                  {(provided, snapshot) => (
+                                    <motion.div
+                                      ref={provided.innerRef}
+                                      {...(provided.draggableProps as any)}
+                                      {...(provided.dragHandleProps as any)}
+                                      custom={index}
+                                      variants={itemVariants}
+                                      initial="hidden"
+                                      animate="visible"
+                                      whileHover={{ scale: 1.01 }}
+                                      style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
+                                      onClick={() => setSelectedItemId(item.id)}
+                                      className="glass-card p-3 cursor-pointer group"
                                     >
-                                      {format(day, 'eee', { locale: de })}
-                                    </div>
-                                  ));
-                                } catch (e) {
-                                  return (
-                                    <div className="text-[10px] font-bold text-muted-foreground bg-muted/50 rounded px-1 py-0.5 text-center leading-none">
-                                      {format(start, 'eee', { locale: de })}
-                                    </div>
-                                  );
-                                }
-                              })()}
-                            </div>
-
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className={`bg-card border rounded-lg p-3 lg:p-4 shadow-sm flex-1 flex gap-3 lg:gap-4 items-start cursor-pointer transition-all ${
-                                selectedItemId === item.id ? 'ring-2 ring-primary border-primary' : 'hover:border-primary/50'
-                              } ${item.title.toUpperCase().includes('TBD') ? 'bg-orange-50/50 border-orange-200' : ''}`}
-                              onClick={() => setSelectedItemId(item.id)}
-                            >
-                            <div className={`p-1.5 lg:p-2 rounded-full mt-1 ${
-                              item.title.toUpperCase().includes('TBD') ? 'bg-orange-100 text-orange-600' : 'bg-primary/10 text-primary'
-                            }`}>
-                              <Icon className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex justify-between items-start">
-                                <h4 className={`font-semibold text-sm lg:text-base ${item.title.toUpperCase().includes('TBD') ? 'text-orange-700' : ''}`}>
-                                  {item.title}
-                                </h4>
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  {item.fileData && (
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-6 w-6 text-primary" 
-                                      onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        const win = window.open();
-                                        if (win) win.document.write(`<iframe src="${item.fileData}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                                      }}
-                                      title="Datei öffnen"
-                                    >
-                                      <FileText className="h-4 w-4" />
-                                    </Button>
+                                      <div className="flex gap-2.5">
+                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 icon-${item.type}`}>
+                                          <Icon className="h-4 w-4" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-start justify-between gap-1">
+                                            <div className="min-w-0">
+                                              <h4 className="text-sm font-semibold truncate leading-tight">{item.title}</h4>
+                                              {getDurationLabel(item as TripItem) && (
+                                                <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border mt-0.5 text-muted-foreground bg-muted/50">
+                                                  {getDurationLabel(item as TripItem)}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                              {item.file_data && (
+                                                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                                                  onClick={e => { e.stopPropagation(); const w = window.open(); if (w) w.document.write(`<iframe src="${item.file_data}" frameborder="0" style="border:0;width:100%;height:100%"></iframe>`); }}
+                                                  className="w-6 h-6 rounded-lg border border-border flex items-center justify-center bg-white text-muted-foreground hover:text-foreground transition-colors">
+                                                  <FileText className="h-3.5 w-3.5" />
+                                                </motion.button>
+                                              )}
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); openEditDialog(item as TripItem); }}
+                                                className="p-1.5 rounded-lg border border-border bg-white text-muted-foreground hover:text-foreground hover:border-foreground/15 transition-colors"
+                                              >
+                                                <Settings2 className="h-3.5 w-3.5" />
+                                              </button>
+                                              <Dialog>
+                                                <DialogTrigger render={
+                                                  <button
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="p-1.5 rounded-lg border border-border bg-white text-muted-foreground hover:text-destructive hover:border-destructive/30 transition-colors"
+                                                  >
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                  </button>
+                                                } />
+                                                <DialogContent className="glass-card border-0 p-6 max-w-sm shadow-lg">
+                                                  <DialogHeader>
+                                                    <DialogTitle className="text-base font-semibold">Eintrag löschen?</DialogTitle>
+                                                    <DialogDescription className="text-sm">
+                                                      Möchtest du diesen Eintrag wirklich aus deiner Planung entfernen?
+                                                    </DialogDescription>
+                                                  </DialogHeader>
+                                                  <div className="flex gap-3 pt-4">
+                                                    <DialogTrigger render={
+                                                      <button className="flex-1 py-2 px-4 rounded-xl text-sm font-medium border border-border">Abbrechen</button>
+                                                    } />
+                                                    <button
+                                                      onClick={(e) => handleDeleteItem(item.id, e)}
+                                                      className="flex-1 py-2 px-4 rounded-xl text-sm font-medium bg-destructive text-white"
+                                                    >Löschen</button>
+                                                  </div>
+                                                </DialogContent>
+                                              </Dialog>
+                                            </div>
+                                          </div>
+                                          {item.location_name && (
+                                            <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                                              <MapPin className="h-2.5 w-2.5 flex-shrink-0" />
+                                              <a
+                                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location_name)}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={e => e.stopPropagation()}
+                                                className="truncate hover:text-foreground hover:underline decoration-foreground/20 underline-offset-2 transition-all"
+                                              >
+                                                {item.location_name}
+                                              </a>
+                                              {item.end_location_name && (
+                                                <>
+                                                  <ChevronRight className="h-2.5 w-2.5 flex-shrink-0" />
+                                                  <a
+                                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.end_location_name)}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    onClick={e => e.stopPropagation()}
+                                                    className="truncate hover:text-foreground hover:underline decoration-foreground/20 underline-offset-2 transition-all"
+                                                  >
+                                                    {item.end_location_name}
+                                                  </a>
+                                                </>
+                                              )}
+                                            </div>
+                                          )}
+                                          {item.type === 'transport' &&
+                                            typeof item.lat === 'number' &&
+                                            typeof item.lng === 'number' &&
+                                            typeof item.end_lat === 'number' &&
+                                            typeof item.end_lng === 'number' && (
+                                            <a
+                                              href={buildGoogleMapsNavigationUrl(
+                                                { lat: item.lat, lng: item.lng },
+                                                { lat: item.end_lat, lng: item.end_lng },
+                                              )}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              onClick={e => e.stopPropagation()}
+                                              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-rose-700/90 hover:text-rose-800 hover:underline underline-offset-2"
+                                            >
+                                              <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                                              Navigation in Google Maps
+                                            </a>
+                                          )}
+                                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                            {item.start_time && (
+                                              <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 mt-0.5">
+                                                <div className="flex items-start gap-1.5">
+                                                  <CalendarDays className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                                                  <span>{formatDateRange(item.start_time, item.end_time, item.is_all_day)}</span>
+                                                </div>
+                                                {item.type === 'transport' && transportRoutes[item.id] && (
+                                                  <span className="text-[11px] font-medium text-foreground/70">
+                                                    <span className="text-muted-foreground/60">· </span>
+                                                    {transportRoutes[item.id]?.durationInTrafficText
+                                                      ? `Live: ${transportRoutes[item.id]!.durationInTrafficText}`
+                                                      : `Fahrt: ${transportRoutes[item.id]!.durationText}`}
+                                                    {transportRoutes[item.id]?.distanceText ? (
+                                                      <span className="text-muted-foreground font-normal"> ({transportRoutes[item.id]!.distanceText})</span>
+                                                    ) : null}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            )}
+                                            {!item.start_time && item.type === 'transport' && transportRoutes[item.id] && (
+                                              <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-foreground/70">
+                                                <Navigation className="h-3.5 w-3.5 flex-shrink-0" />
+                                                {transportRoutes[item.id]?.durationInTrafficText
+                                                  ? `Live: ${transportRoutes[item.id]!.durationInTrafficText}`
+                                                  : `Fahrt: ${transportRoutes[item.id]!.durationText}`}
+                                                {transportRoutes[item.id]?.distanceText ? (
+                                                  <span className="text-muted-foreground font-normal"> ({transportRoutes[item.id]!.distanceText})</span>
+                                                ) : null}
+                                              </div>
+                                            )}
+                                            {item.displayCost !== undefined && item.displayCost > 0 && (
+                                              <div className="flex items-center gap-0.5 font-semibold text-foreground/60 ml-auto">
+                                                <span>{item.isSharedCost ? '(anteilig) ' : ''}{item.displayCost.toFixed(2)}</span>
+                                                <Euro className="h-3 w-3" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </motion.div>
                                   )}
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={(e) => { e.stopPropagation(); openEditDialog(item); }}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); handleDeleteItem(item.id); }}>
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                              {item.description && (
-                                <p className="text-xs text-primary font-medium mt-1 italic">
-                                  {(() => {
-                                    if ((item.type === 'transport' || item.type === 'train' || item.type === 'flight') && item.startTime && item.endTime) {
-                                      const start = new Date(item.startTime);
-                                      const end = new Date(item.endTime);
-                                      if (end > start) {
-                                        const duration = intervalToDuration({ start, end });
-                                        return `Dauer: ${formatDuration(duration, { 
-                                          locale: de,
-                                          format: ['hours', 'minutes']
-                                        })}`;
-                                      }
-                                    }
-                                    return item.description;
-                                  })()}
-                                </p>
-                              )}
-                              {item.type === 'accommodation' && item.startTime && item.endTime && (
-                                <p className="text-xs text-primary font-medium mt-1 italic">
-                                  {(() => {
-                                    const nights = differenceInCalendarDays(new Date(item.endTime), new Date(item.startTime));
-                                    return `Dauer: ${nights} ${nights === 1 ? 'Nacht' : 'Nächte'}`;
-                                  })()}
-                                </p>
-                              )}
-                              {item.locationName && (
-                                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                  <button
-                                    type="button"
-                                    className="text-sm text-muted-foreground flex items-center gap-1 hover:text-primary transition-colors text-left"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const query = encodeURIComponent(item.locationName!);
-                                      window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
-                                    }}
-                                  >
-                                    <MapPin className="h-3 w-3 shrink-0" />
-                                    <span className="underline decoration-dotted underline-offset-2">{item.locationName}</span>
-                                  </button>
-                                  {item.endLocationName && (item.type === 'flight' || item.type === 'train' || item.type === 'transport') ? (
-                                    <>
-                                      <span className="text-muted-foreground">→</span>
-                                      <button
-                                        type="button"
-                                        className="text-sm text-muted-foreground flex items-center gap-1 hover:text-primary transition-colors text-left"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const query = encodeURIComponent(item.endLocationName!);
-                                          window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
-                                        }}
-                                      >
-                                        <MapPin className="h-3 w-3 shrink-0" />
-                                        <span className="underline decoration-dotted underline-offset-2">{item.endLocationName}</span>
-                                      </button>
-                                    </>
-                                  ) : item.endLocationName ? (
-                                    <span className="text-sm text-muted-foreground">→ {item.endLocationName}</span>
-                                  ) : null}
-                                </div>
-                              )}
-                              <div className="flex justify-between items-center mt-2">
-                                <div className="text-xs text-muted-foreground">
-                                  {item.startTime && (
-                                    <p>{formatDate(item.startTime, item.isAllDay)}</p>
-                                  )}
-                                  {item.endTime && (
-                                    <p className="text-[10px]">bis {formatDate(item.endTime, item.isAllDay)}</p>
-                                  )}
-                                </div>
-                                {item.type !== 'flight' && item.type !== 'train' && item.type !== 'transport' && (
-                                  <p className="text-xs font-bold text-primary">
-                                    {(() => {
-                                      if (item.bookingReference) {
-                                        const sameRefItems = items.filter(i => i.bookingReference === item.bookingReference);
-                                        const totalRefCost = sameRefItems.reduce((sum, i) => sum + (i.cost || 0), 0);
-                                        if (sameRefItems.length > 1 && totalRefCost > 0) {
-                                          return (
-                                            <>
-                                              <span className="text-[10px] text-muted-foreground font-normal mr-1">(anteilig)</span>
-                                              {(totalRefCost / sameRefItems.length).toFixed(2)}€
-                                            </>
-                                          );
-                                        }
-                                      }
-                                      return item.cost !== undefined ? `${item.cost.toFixed(2)}€` : null;
-                                    })()}
-                                  </p>
-                                )}
-                                {(item.type === 'flight' || item.type === 'train' || item.type === 'transport') && (
-                                  <p className="text-xs font-bold text-primary">
-                                    <span className="text-[10px] text-muted-foreground font-normal mr-1">(anteilig)</span>
-                                    {(((item.type === 'flight' ? trip.flightCost : item.type === 'train' ? trip.trainCost : trip.transportCost) || 0) / (items.filter(i => i.type === item.type).length || 1)).toFixed(2)}€
-                                  </p>
-                                )}
-                              </div>
-                              <div className="flex gap-2 mt-2">
-                                {item.bookingReference && (
-                                  <p className="text-xs bg-muted inline-block px-2 py-1 rounded">
-                                    Ref: {item.bookingReference}
-                                  </p>
-                                )}
-                                {(item.type === 'transport' || item.type === 'flight' || item.type === 'train') && item.locationName && item.endLocationName && (
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    className="h-6 text-[10px] px-2"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const travelMode = item.type === 'train' ? 'transit' : (item.type === 'flight' ? 'flight' : 'driving');
-                                      window.open(`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(item.locationName!)}&destination=${encodeURIComponent(item.endLocationName!)}&travelmode=${travelMode}`, '_blank');
-                                    }}
-                                  >
-                                    Route öffnen
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                                </Draggable>
+                              </React.Fragment>
+                            );
+                          })}
+                          {provided.placeholder}
                         </div>
                       )}
-                    </Draggable>
+                    </Droppable>
+                  </DragDropContext>
 
-                    );
-                  })}
-
-
-
-
-
-
-
-                  {provided.placeholder}
-                </div>
+                  {items.length === 0 && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
+                      className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                      <div className="w-12 h-12 rounded-2xl border border-dashed border-border flex items-center justify-center">
+                        <Navigation className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Reiseplan ist leer</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Füge deinen ersten Eintrag hinzu.</p>
+                      </div>
+                    </motion.div>
+                  )}
+                </motion.div>
               )}
-            </Droppable>
-          </DragDropContext>
 
-
-          {items.length === 0 && (
-            <div className="text-center py-10 text-muted-foreground">
-              <p>Dein Reiseplan ist leer.</p>
-              <p className="text-sm mt-2">Füge Einträge hinzu oder importiere ein PDF, um loszulegen.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Todo List Sidebar/View */}
-        <div className={`w-full lg:w-1/3 border-r bg-muted/10 overflow-y-auto p-2 lg:p-4 pb-20 lg:pb-4 pt-16 lg:pt-16 ${mobileView === 'todos' ? 'block' : 'hidden'}`}>
-          <div className="max-w-md mx-auto">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <ListTodo className="h-5 w-5 text-primary" />
-              To-Do Liste
-            </h2>
-            
-            <form onSubmit={handleAddTodo} className="flex gap-2 mb-6">
-              <Input 
-                value={newTodoText} 
-                onChange={e => setNewTodoText(e.target.value)} 
-                placeholder="Neue Aufgabe..." 
-                className="flex-1"
-              />
-              <Button type="submit" size="icon">
-                <Plus className="h-4 w-4" />
-              </Button>
-            </form>
-
-            <DragDropContext onDragEnd={handleTodoDragEnd}>
-              <Droppable droppableId="todos">
-                {(provided) => (
-                  <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
-                    {todos.map((todo, index) => (
-                      <Draggable key={todo.id} draggableId={todo.id} index={index}>
-                        {(provided) => (
-                          <div
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            className="flex items-center gap-2 bg-card border rounded-lg p-3 group shadow-sm"
-                          >
-                            <div {...provided.dragHandleProps} className="text-muted-foreground cursor-grab active:cursor-grabbing">
-                              <GripVertical className="h-4 w-4" />
-                            </div>
-                            <div className={`flex-1 flex items-center gap-3 text-left transition-colors ${todo.completed ? 'text-muted-foreground' : ''}`}>
-                              <button onClick={() => toggleTodo(todo)}>
-                                {todo.completed ? (
-                                  <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
-                                ) : (
-                                  <Circle className="h-5 w-5 text-muted-foreground shrink-0" />
-                                )}
-                              </button>
-                              {editingTodoId === todo.id ? (
-                                <Input 
-                                  value={editingTodoText}
-                                  onChange={e => setEditingTodoText(e.target.value)}
-                                  onBlur={() => handleEditTodo(todo.id, editingTodoText)}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') handleEditTodo(todo.id, editingTodoText);
-                                    if (e.key === 'Escape') setEditingTodoId(null);
-                                  }}
-                                  autoFocus
-                                  className="h-8"
-                                />
-                              ) : (
-                                <span 
-                                  className={`flex-1 cursor-text py-1 ${todo.completed ? 'line-through' : ''}`}
-                                  onClick={() => {
-                                    setEditingTodoId(todo.id);
-                                    setEditingTodoText(todo.text);
-                                  }}
-                                >
-                                  {todo.text}
-                                </span>
-                              )}
-                            </div>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => deleteTodo(todo.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
+              {activeTab === 'todos' && (
+                <motion.div
+                  key="todos"
+                  custom={dir}
+                  variants={panelVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  className="absolute inset-0 overflow-y-auto p-4 pb-24 lg:pb-4"
+                >
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'var(--gradient-primary)' }}>
+                      <ListTodo className="h-3.5 w-3.5 text-white" />
+                    </div>
+                    <h2 className="text-sm font-semibold">To-Do Liste</h2>
+                    {todos.length > 0 && (
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {todos.filter(t => t.completed).length}/{todos.length}
+                      </span>
+                    )}
                   </div>
-                )}
-              </Droppable>
-            </DragDropContext>
 
-            {todos.length === 0 && (
-              <div className="text-center py-10 text-muted-foreground">
-                <p>Keine To-Dos vorhanden.</p>
-              </div>
-            )}
+                  <form onSubmit={handleAddTodo} className="flex gap-2 mb-4">
+                    <Input value={newTodoText} onChange={e => setNewTodoText(e.target.value)} placeholder="Neue Aufgabe…"
+                      className="flex-1 h-9 rounded-xl border-border bg-white text-sm" />
+                    <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} type="submit"
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0"
+                      style={{ background: 'var(--gradient-primary)' }}>
+                      <Plus className="h-4 w-4" />
+                    </motion.button>
+                  </form>
+
+                  <DragDropContext onDragEnd={handleTodoDragEnd}>
+                    <Droppable droppableId="todos">
+                      {(provided) => (
+                        <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                          {todos.map((todo, index) => (
+                            <Draggable key={todo.id} draggableId={todo.id} index={index}>
+                              {(provided, snapshot) => (
+                                <motion.div
+                                  ref={provided.innerRef}
+                                  {...(provided.draggableProps as any)}
+                                  custom={index}
+                                  variants={todoVariants}
+                                  initial="hidden"
+                                  animate="visible"
+                                  style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
+                                  className="glass-card flex items-center gap-2.5 p-3 group"
+                                >
+                                  <div {...provided.dragHandleProps} className="text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing transition-colors">
+                                    <GripVertical className="h-4 w-4" />
+                                  </div>
+                                  <div className="flex items-center gap-2.5 flex-1 cursor-pointer" onClick={() => toggleTodo(todo)}>
+                                    <div className="w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-all duration-150"
+                                      style={{ borderColor: todo.completed ? 'oklch(0.50 0.13 145)' : 'oklch(0.75 0.008 255)', background: todo.completed ? 'oklch(0.50 0.13 145)' : 'transparent' }}>
+                                      <AnimatePresence>
+                                        {todo.completed && (
+                                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={{ duration: 0.15 }}>
+                                            <Check className="h-2.5 w-2.5 text-white" />
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
+                                    {editingTodoId === todo.id ? (
+                                      <Input
+                                        autoFocus
+                                        value={editingTodoText}
+                                        onChange={e => setEditingTodoText(e.target.value)}
+                                        onBlur={() => handleUpdateTodoText(todo.id)}
+                                        onKeyDown={e => { if (e.key === 'Enter') handleUpdateTodoText(todo.id); if (e.key === 'Escape') setEditingTodoId(null); }}
+                                        onClick={e => e.stopPropagation()}
+                                        className="h-7 py-0 px-2 rounded-lg border-muted bg-white text-sm flex-1"
+                                      />
+                                    ) : (
+                                      <span 
+                                        onClick={(e) => { e.stopPropagation(); setEditingTodoId(todo.id); setEditingTodoText(todo.text); }}
+                                        className={`text-sm transition-colors flex-1 py-0.5 ${todo.completed ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+                                      >
+                                        {todo.text}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                                    onClick={() => deleteTodo(todo.id)}
+                                    className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg border border-border flex items-center justify-center bg-white text-muted-foreground hover:text-destructive hover:border-destructive/30 transition-all">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </motion.button>
+                                </motion.div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </DragDropContext>
+
+                  {todos.length === 0 && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
+                      className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                      <div className="w-12 h-12 rounded-2xl border border-dashed border-border flex items-center justify-center">
+                        <ListTodo className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">Keine Aufgaben vorhanden.</p>
+                    </motion.div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Map tab – only visible on mobile inside this panel */}
+              {activeTab === 'map' && (
+                <motion.div
+                  key="map-mobile"
+                  custom={dir}
+                  variants={panelVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  className="absolute inset-0 lg:hidden"
+                >
+                  <Map items={items} selectedItemId={selectedItemId} onSelectItem={setSelectedItemId} transportRoutes={transportRoutes} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Mobile bottom tab nav */}
+          <div className="lg:hidden absolute bottom-5 left-1/2 -translate-x-1/2 z-50">
+            <div className="flex gap-1 p-1 bg-white rounded-full border border-border" style={{ boxShadow: '0 4px 20px oklch(0 0 0 / 10%)' }}>
+              {TabBtn({ k: "timeline", icon: Navigation, label: "Plan" })}
+              {TabBtn({ k: "todos", icon: ListTodo, label: "To-Do" })}
+              {TabBtn({ k: "map", icon: MapPin, label: "Karte" })}
+            </div>
           </div>
         </div>
 
-        {/* Map Area */}
-        <div className={`flex-1 bg-muted relative z-0 overflow-hidden ${mobileView === 'map' ? 'block' : 'hidden lg:block'}`}>
-          <Map items={items} selectedItemId={selectedItemId} onSelectItem={setSelectedItemId} />
+        {/* ── Right panel: Google Maps (always visible on desktop) ── */}
+        <div className="hidden lg:block flex-1">
+          <Map items={items} selectedItemId={selectedItemId} onSelectItem={setSelectedItemId} transportRoutes={transportRoutes} />
         </div>
       </div>
     </div>

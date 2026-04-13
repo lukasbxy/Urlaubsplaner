@@ -1,9 +1,9 @@
-export interface UserProfile {
-  id: string;
-  email: string;
-  displayName?: string;
-  photoURL?: string;
-}
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://REDACTED_PROJECT_REF.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'REMOVED_JWT';
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export interface Trip {
   id: string;
@@ -20,12 +20,10 @@ export interface Trip {
   items?: { start_time?: string; end_time?: string; is_all_day?: boolean }[];
 }
 
-export type TripItemType = 'location' | 'flight' | 'accommodation' | 'activity' | 'transport' | 'train';
-
 export interface TripItem {
   id: string;
   trip_id: string;
-  type: TripItemType;
+  type: 'location' | 'flight' | 'accommodation' | 'activity' | 'transport' | 'train';
   title: string;
   description?: string;
   start_time?: string;
@@ -42,5 +40,14 @@ export interface TripItem {
   file_data?: string;
   file_name?: string;
   item_order: number;
+  created_at: string;
+}
+
+export interface Todo {
+  id: string;
+  trip_id: string;
+  text: string;
+  completed: boolean;
+  todo_order: number;
   created_at: string;
 }
