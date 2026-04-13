@@ -268,7 +268,13 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4"
           >
             {[1, 2, 3].map(i => (
-              <div key={i} className="rounded-xl sm:rounded-2xl h-28 sm:h-32 shimmer border border-border" />
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08, duration: 0.35, ease: EASE }}
+                className="rounded-xl sm:rounded-2xl h-28 sm:h-32 shimmer border border-border"
+              />
             ))}
           </motion.div>
 
@@ -281,9 +287,13 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
             animate="visible"
             className="flex flex-col items-center justify-center py-14 sm:py-24 gap-3 sm:gap-4"
           >
-            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl border border-border bg-white flex items-center justify-center">
+            <motion.div
+              animate={{ y: [0, -6, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl border border-border bg-white flex items-center justify-center"
+            >
               <Compass className="h-5 w-5 sm:h-7 sm:w-7 text-muted-foreground" />
-            </div>
+            </motion.div>
             <div className="text-center">
               <p className="font-medium text-foreground">Noch keine Reisen</p>
               <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Erstelle deine erste Reise, um loszulegen.</p>
@@ -302,7 +312,8 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
 
         ) : (
           /* Grid */
-          <motion.div key="grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <motion.div key="grid" layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+            <AnimatePresence>
             {trips.map((trip, i) => {
               const { start, end } = getTripDates(trip);
               const duration = getDuration(start, end);
@@ -313,8 +324,11 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
                   variants={cardVariants}
                   initial="hidden"
                   animate="visible"
-                  whileHover={{ y: -3, boxShadow: '0 8px 24px oklch(0 0 0 / 9%), 0 0 0 1px oklch(0 0 0 / 4%)' }}
-                  whileTap={{ scale: 0.99 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 8, transition: { duration: 0.25, ease: EASE } }}
+                  layout
+                  transition={{ layout: { type: 'spring', stiffness: 400, damping: 30 } }}
+                  whileHover={{ y: -4, boxShadow: '0 12px 28px oklch(0 0 0 / 10%), 0 0 0 1px oklch(0 0 0 / 4%)' }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => onSelectTrip(trip.id)}
                   className="glass-card p-4 sm:p-5 cursor-pointer group"
                 >
@@ -392,20 +406,23 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
               );
             })}
 
+            </AnimatePresence>
+
             {/* Add card */}
             <motion.div
+              layout
               custom={trips.length}
               variants={cardVariants}
               initial="hidden"
               animate="visible"
-              whileHover={{ y: -3 }}
-              whileTap={{ scale: 0.99 }}
+              whileHover={{ y: -4 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => setIsDialogOpen(true)}
               className="cursor-pointer group flex flex-col items-center justify-center gap-2 sm:gap-2.5 min-h-[132px] sm:min-h-[160px] h-full rounded-xl sm:rounded-2xl border border-dashed border-border hover:border-foreground/20 hover:bg-white/60 transition-all"
             >
               <motion.div
                 whileHover={{ rotate: 90 }}
-                transition={{ duration: 0.18 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 15 }}
                 className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl border border-border flex items-center justify-center bg-white text-muted-foreground group-hover:text-foreground group-hover:border-foreground/20 transition-colors"
               >
                 <Plus className="h-4 w-4" />

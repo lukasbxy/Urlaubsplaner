@@ -10,10 +10,16 @@ import { oauthRateLimitStatus, recordOAuthAttempt } from './lib/oauthRateLimit';
 import { Input } from './components/ui/input';
 import { Plane, WifiOff, LogOut, Compass } from 'lucide-react';
 
-function mapPasswordLoginError(message: string): string {
+function mapPasswordLoginError(message: string, code?: string): string {
+  if (code === 'email_not_confirmed') {
+    return 'Diese E-Mail ist noch nicht bestätigt. In Supabase unter Authentication → Users den Nutzer als bestätigt markieren oder „Confirm email“ für den E-Mail-Provider deaktivieren.';
+  }
   const m = message.toLowerCase();
   if (m.includes('invalid login') || m.includes('invalid_credentials') || m.includes('invalid email or password')) {
     return 'E-Mail oder Passwort ist ungültig.';
+  }
+  if (m.includes('email not confirmed')) {
+    return 'E-Mail noch nicht bestätigt. Bitte in der Supabase-Konsole den Nutzer bestätigen oder Bestätigungspflicht abschalten.';
   }
   return message;
 }
@@ -71,7 +77,7 @@ function AppContent() {
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedEmail = email.trim();
+    const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail) {
       setLoginError('Bitte E-Mail und Passwort eingeben.');
       return;
@@ -97,7 +103,7 @@ function AppContent() {
     });
     setLoginSubmitting(false);
     if (error) {
-      setLoginError(mapPasswordLoginError(error.message));
+      setLoginError(mapPasswordLoginError(error.message, error.code));
       return;
     }
     setPassword('');
@@ -246,20 +252,20 @@ function AppContent() {
         {selectedTripId ? (
           <motion.div
             key="trip"
-            initial={{ opacity: 0, x: 32 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -32 }}
-            transition={{ duration: 0.28, ease: EASE }}
+            initial={{ opacity: 0, x: 40, filter: 'blur(4px)' }}
+            animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: -40, filter: 'blur(4px)' }}
+            transition={{ duration: 0.32, ease: EASE }}
           >
             <TripView tripId={selectedTripId} onBack={exitTrip} />
           </motion.div>
         ) : (
           <motion.div
             key="dashboard"
-            initial={{ opacity: 0, x: -32 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 32 }}
-            transition={{ duration: 0.28, ease: EASE }}
+            initial={{ opacity: 0, x: -40, filter: 'blur(4px)' }}
+            animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: 40, filter: 'blur(4px)' }}
+            transition={{ duration: 0.32, ease: EASE }}
           >
             {/* Header */}
             <header className="glass-header sticky top-0 z-50 px-3 py-2 sm:px-5 sm:py-3">

@@ -56,7 +56,7 @@ Lege eine lokale Datei **`.env`** oder **`.env.local`** an (Vite lädt `VITE_*` 
    - `20260413123651_create_tables.sql` legt `trips`, `items`, `todos` an und aktiviert RLS inkl. Policies.
    - `20260413124846_remove_rls.sql` **deaktiviert RLS** (nur sinnvoll für unkritische Demos).
    - `20260413200000_restore_rls.sql` **stellt RLS und Policies wieder her** (empfohlen für öffentliche Deployments).
-3. **Authentication:** **E-Mail**-Provider mit Passwort nutzen. Nutzer unter **Users** anlegen (oder einladen) und Passwort setzen. Empfehlung: **Sign ups** für die öffentliche App deaktivieren („Disable sign ups“ / nur Einladung), damit niemand sich selbst registrieren kann. Redirect-URLs sind für reinen Passwort-Login weniger kritisch als bei Magic Link; für Passwort-Reset-Mails ggf. Site-URL in Supabase setzen.
+3. **Authentication:** **E-Mail**-Provider mit Passwort nutzen. Nutzer unter **Users** anlegen und Passwort setzen. Wenn Login trotz richtiger Daten mit **400** fehlschlägt: oft **E-Mail noch nicht bestätigt** (Häkchen „Confirm email“ beim User in der Tabelle setzen oder unter Provider **„Confirm email“** deaktivieren). **Sign ups** öffentlich deaktivieren, wenn nur von dir angelegte Konten erlaubt sein sollen.
 4. Client-seitig `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` setzen.
 
 ### Datenmodell (Kurzüberblick)
