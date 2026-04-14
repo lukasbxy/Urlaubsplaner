@@ -48,34 +48,40 @@ function DialogContent({
   return (
     <DialogPortal>
       <DialogOverlay />
-      <DialogPrimitive.Popup
-        data-slot="dialog-content"
-        className={cn(
-          "dialog-content-animated fixed z-50 grid w-full text-sm text-popover-foreground outline-none",
-          "inset-0 rounded-none bg-popover p-4 overflow-y-auto",
-          "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-w-sm sm:max-h-[calc(100dvh-3rem)] sm:overflow-y-auto sm:rounded-xl sm:ring-1 sm:ring-foreground/10 sm:max-w-[calc(100%-2rem)] sm:gap-4",
-          className
-        )}
-        {...props}
+      {/* Flex-Zentrierung im Viewport (Desktop); Floating UI verankert sonst am Trigger */}
+      <div
+        data-slot="dialog-positioner"
+        className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 pointer-events-none"
       >
-        {children}
-        {showCloseButton && (
-          <DialogPrimitive.Close
-            data-slot="dialog-close"
-            render={
-              <Button
-                variant="ghost"
-                className="absolute top-2 right-2"
-                size="icon-sm"
+        <DialogPrimitive.Popup
+          data-slot="dialog-content"
+          className={cn(
+            "dialog-content-animated dialog-popup-center pointer-events-auto grid w-full text-sm text-popover-foreground outline-none",
+            "fixed inset-0 z-50 rounded-none bg-popover p-4 overflow-y-auto",
+            "sm:relative sm:inset-auto sm:z-auto sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:w-full sm:overflow-y-auto sm:rounded-xl sm:ring-1 sm:ring-foreground/10 sm:gap-4",
+            className
+          )}
+          {...props}
+        >
+          {children}
+          {showCloseButton && (
+            <DialogPrimitive.Close
+              data-slot="dialog-close"
+              render={
+                <Button
+                  variant="ghost"
+                  className="absolute top-2 right-2"
+                  size="icon-sm"
+                />
+              }
+            >
+              <XIcon
               />
-            }
-          >
-            <XIcon
-            />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Popup>
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Popup>
+      </div>
     </DialogPortal>
   )
 }

@@ -255,7 +255,7 @@
         }
     }
 
-    /* Desktop: centered scale */
+    /* Desktop: Zentrierung per Flex-Parent (.dialog-positioner), hier nur sanftes Scale */
     @media (min-width: 640px) {
         .dialog-content-animated {
             animation: dialog-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -263,26 +263,36 @@
         .dialog-content-animated[data-closed] {
             animation: dialog-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
+
+        /* Floating-UI am Trigger neutralisieren, damit das Modal wirklich mittig sitzt */
+        .dialog-popup-center {
+            position: relative !important;
+            inset: auto !important;
+            top: auto !important;
+            left: auto !important;
+            right: auto !important;
+            bottom: auto !important;
+        }
     }
 
     @keyframes dialog-in {
         0% {
             opacity: 0;
-            transform: translate(-50%, -48%) scale(0.96);
+            transform: scale(0.96);
         }
         100% {
             opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
+            transform: scale(1);
         }
     }
     @keyframes dialog-out {
         0% {
             opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
+            transform: scale(1);
         }
         100% {
             opacity: 0;
-            transform: translate(-50%, -48%) scale(0.96);
+            transform: scale(0.96);
         }
     }
 
