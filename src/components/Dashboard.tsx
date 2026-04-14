@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
-import { supabase, Trip, TripItem, Todo } from '../lib/supabase';
+import { supabase, Trip } from '../lib/supabase';
 import { useAuth } from './AuthProvider';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -81,6 +81,7 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
     const { data, error } = await supabase
       .from('trips')
       .select('*, items(start_time, end_time, is_all_day)')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -156,57 +157,42 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
   };
 
   const handleDeleteTrip = async (tripId: string) => {
-    const { data: snapshot, error: fetchErr } = await supabase
+    const { data: row, error: fetchErr } = await supabase
       .from('trips')
-      .select('*, items(*), todos(*)')
+      .select('id, title')
       .eq('id', tripId)
       .single();
 
-    if (fetchErr || !snapshot) {
+    if (fetchErr || !row) {
       console.error('Error loading trip for delete:', fetchErr);
       alert('Fehler beim Laden der Reise');
       return;
     }
 
-    const snap = snapshot as Trip & { items?: TripItem[]; todos?: Todo[] };
-    const snapItems = snap.items ?? [];
-    const snapTodos = snap.todos ?? [];
-    const { items: _items, todos: _todos, ...tripRow } = snap;
+    const deletedAt = new Date().toISOString();
+    const { error } = await supabase
+      .from('trips')
+      .update({ deleted_at: deletedAt })
+      .eq('id', tripId);
 
-    const { error } = await supabase.from('trips').delete().eq('id', tripId);
     if (error) {
-      console.error('Error deleting trip:', error);
-      alert('Fehler beim Löschen der Reise');
+      console.error('Error removing trip:', error);
+      alert('Fehler beim Entfernen der Reise');
       return;
     }
     setTrips(p => p.filter(t => t.id !== tripId));
     setUndoKey(k => k + 1);
     setUndoState({
-      message: `„${snap.title}“ gelöscht`,
+      message: `„${row.title}“ entfernt`,
       onUndo: async () => {
-        const { error: tripErr } = await supabase.from('trips').insert(tripRow);
-        if (tripErr) {
-          console.error(tripErr);
+        const { error: undoErr } = await supabase
+          .from('trips')
+          .update({ deleted_at: null })
+          .eq('id', tripId);
+        if (undoErr) {
+          console.error(undoErr);
           alert('Rückgängig war nicht möglich.');
           return;
-        }
-        if (snapItems.length) {
-          const { error: itemsErr } = await supabase.from('items').insert(snapItems);
-          if (itemsErr) {
-            console.error(itemsErr);
-            alert('Reise wiederhergestellt, Timeline-Einträge konnten nicht alle wiederhergestellt werden.');
-            await fetchTrips();
-            return;
-          }
-        }
-        if (snapTodos.length) {
-          const { error: todosErr } = await supabase.from('todos').insert(snapTodos);
-          if (todosErr) {
-            console.error(todosErr);
-            alert('Reise wiederhergestellt, To-Dos konnten nicht alle wiederhergestellt werden.');
-            await fetchTrips();
-            return;
-          }
         }
         await fetchTrips();
       },
@@ -405,9 +391,9 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
                         } />
                         <DialogContent className="glass-card border-0 p-4 sm:p-6 max-w-sm shadow-lg">
                           <DialogHeader>
-                            <DialogTitle className="text-sm sm:text-base">Reise löschen?</DialogTitle>
+                            <DialogTitle className="text-sm sm:text-base">Reise aus der Liste entfernen?</DialogTitle>
                             <DialogDescription>
-                              Alle Pläne und To-Dos werden entfernt. Du kannst die Aktion unten rechts kurz rückgängig machen.
+                              Die Reise wird aus deiner Liste genommen und bleibt in der Datenbank erhalten. Du kannst das unten rechts kurz rückgängig machen.
                             </DialogDescription>
                           </DialogHeader>
                           <div className="flex gap-3 mt-4">
@@ -423,7 +409,7 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
                                 />
                               }
                             >
-                              Löschen
+                              Entfernen
                             </DialogClose>
                           </div>
                         </DialogContent>

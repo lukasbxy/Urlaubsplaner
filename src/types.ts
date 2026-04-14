@@ -14,6 +14,7 @@ export interface Trip {
   owner_id: string;
   collaborator_ids: string[];
   created_at: string;
+  deleted_at?: string | null;
   flight_cost?: number;
   train_cost?: number;
   transport_cost?: number;

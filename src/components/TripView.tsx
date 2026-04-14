@@ -116,6 +116,8 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingTodoText, setEditingTodoText] = useState('');
   const [transportRoutes, setTransportRoutes] = useState<Record<string, DrivingRouteInfo | undefined>>({});
+  const [tripLoading, setTripLoading] = useState(true);
+  const [tripNotFound, setTripNotFound] = useState(false);
   const [undoKey, setUndoKey] = useState(0);
   const [undoState, setUndoState] = useState<{ message: string; onUndo: () => Promise<void> } | null>(null);
   const dismissUndo = useCallback(() => setUndoState(null), []);
@@ -272,20 +274,42 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
     + (trip?.flight_cost || 0) + (trip?.train_cost || 0) + (trip?.transport_cost || 0);
 
   useEffect(() => {
-    const fetchTrip = async () => { 
-      const { data } = await supabase.from('trips').select('*').eq('id', tripId).single(); 
+    const fetchTrip = async () => {
+      const { data } = await supabase.from('trips').select('*').eq('id', tripId).maybeSingle();
+      setTripLoading(false);
       if (data) {
         setTrip(data);
+        setTripNotFound(false);
         setEditTripTitle(data.title);
         setEditTripDescription(data.description || '');
+      } else {
+        setTrip(null);
+        setTripNotFound(true);
+        setItems([]);
       }
     };
-    const fetchItems = async () => { const { data } = await supabase.from('items').select('*').eq('trip_id', tripId).order('item_order', { ascending: true }); if (data) setItems(data); };
-    fetchTrip(); fetchItems();
-    const ch = supabase.channel(`items_${tripId}`)
+    const fetchItems = async () => {
+      const { data } = await supabase.from('items').select('*').eq('trip_id', tripId).order('item_order', { ascending: true });
+      if (data) setItems(data);
+    };
+    setTripLoading(true);
+    setTripNotFound(false);
+    fetchTrip();
+    fetchItems();
+    const chItems = supabase
+      .channel(`items_${tripId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items', filter: `trip_id=eq.${tripId}` }, fetchItems)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    const chTrip = supabase
+      .channel(`trip_row_${tripId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trips', filter: `id=eq.${tripId}` }, () => {
+        void fetchTrip();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(chItems);
+      supabase.removeChannel(chTrip);
+    };
   }, [tripId]);
 
   useEffect(() => {
@@ -675,13 +699,35 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
     </motion.button>
   );
 
-  if (!trip) return (
-    <div className="flex h-dvh items-center justify-center">
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }} className="text-muted-foreground/40">
-        <Navigation className="h-7 w-7" />
-      </motion.div>
-    </div>
-  );
+  if (tripLoading) {
+    return (
+      <div className="flex h-dvh items-center justify-center">
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }} className="text-muted-foreground/40">
+          <Navigation className="h-7 w-7" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (tripNotFound || !trip) {
+    return (
+      <div className="flex flex-col h-dvh bg-background items-center justify-center gap-4 px-6 text-center">
+        <p className="text-sm text-muted-foreground max-w-sm">
+          Diese Reise ist nicht verfügbar oder wurde aus der Liste entfernt.
+        </p>
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={onBack}
+          className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
+          style={{ background: 'var(--gradient-primary)', boxShadow: '0 2px 10px oklch(0.24 0.030 255 / 18%)' }}
+        >
+          Zurück zur Übersicht
+        </motion.button>
+      </div>
+    );
+  }
 
   const dir = direction(prevTab, activeTab);
 

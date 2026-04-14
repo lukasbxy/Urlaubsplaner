@@ -27,6 +27,8 @@ export interface Trip {
   owner_id: string;
   collaborator_ids: string[];
   created_at: string;
+  /** gesetzt = nur noch in DB, nicht in der App-Liste */
+  deleted_at?: string | null;
   flight_cost?: number;
   train_cost?: number;
   transport_cost?: number;
