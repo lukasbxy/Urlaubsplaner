@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { supabase, Trip, TripItem, Todo } from '../lib/supabase';
 import { Map } from './Map';
@@ -18,6 +18,7 @@ import { Switch } from './ui/switch';
 import { importLibrary } from '@googlemaps/js-api-loader';
 import { fetchDrivingRoute, buildGoogleMapsNavigationUrl, type DrivingRouteInfo } from '../lib/drivingDirections';
 import { tripShareUrl } from '../lib/tripUrl';
+import { UndoSnackbar } from './UndoSnackbar';
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -40,19 +41,38 @@ const typeLabels: Record<string, string> = {
 };
 
 const itemVariants: Variants = {
-  hidden: { opacity: 0, x: -10 },
+  hidden: { opacity: 0, x: -10, scale: 0.98, boxShadow: '0 2px 10px rgba(0,0,0,0), 0 0 0 0px transparent' },
   visible: (i: number) => ({
-    opacity: 1, x: 0,
+    opacity: 1, x: 0, scale: 1,
+    boxShadow: '0 2px 10px rgba(0,0,0,0.03), 0 0 0 0px transparent',
     transition: { delay: i * 0.04, duration: 0.28, ease: EASE },
   }),
+  dragging: {
+    scale: 1.03,
+    opacity: 0.95,
+    boxShadow: '0 20px 40px -8px rgba(0,0,0,0.15), 0 0 0 2px oklch(0.24 0.030 255 / 30%)',
+    transition: { type: 'spring', stiffness: 400, damping: 25 }
+  },
+  selected: {
+    scale: 1,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05), 0 0 0 2px oklch(0.24 0.030 255 / 20%)',
+    transition: { duration: 0.2 }
+  }
 };
 
 const todoVariants: Variants = {
-  hidden: { opacity: 0, y: 6 },
+  hidden: { opacity: 0, y: 6, scale: 0.98, boxShadow: '0 2px 10px rgba(0,0,0,0)' },
   visible: (i: number) => ({
-    opacity: 1, y: 0,
+    opacity: 1, y: 0, scale: 1,
+    boxShadow: '0 2px 10px rgba(0,0,0,0)',
     transition: { delay: i * 0.03, duration: 0.22, ease: EASE },
   }),
+  dragging: {
+    scale: 1.03,
+    opacity: 0.95,
+    boxShadow: '0 16px 32px -8px rgba(0,0,0,0.12), 0 0 0 1px oklch(0.24 0.030 255 / 20%)',
+    transition: { type: 'spring', stiffness: 400, damping: 25 }
+  }
 };
 
 /** Panel slide variants – slides left/right based on direction */
@@ -96,6 +116,9 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingTodoText, setEditingTodoText] = useState('');
   const [transportRoutes, setTransportRoutes] = useState<Record<string, DrivingRouteInfo | undefined>>({});
+  const [undoKey, setUndoKey] = useState(0);
+  const [undoState, setUndoState] = useState<{ message: string; onUndo: () => Promise<void> } | null>(null);
+  const dismissUndo = useCallback(() => setUndoState(null), []);
 
   const processedItems = React.useMemo(() => {
     const tripCostForItemType = (type: TripItem['type']): number | undefined => {
@@ -209,12 +232,26 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
   const handleDeleteItem = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    const snapshot = items.find(i => i.id === id);
+    if (!snapshot) return;
     const { error } = await supabase.from('items').delete().eq('id', id);
     if (error) {
       console.error('Error deleting item:', error);
       alert('Fehler beim Löschen');
     } else {
       setItems(prev => prev.filter(i => i.id !== id));
+      setUndoKey(k => k + 1);
+      setUndoState({
+        message: `„${snapshot.title}“ gelöscht`,
+        onUndo: async () => {
+          const { error: insErr } = await supabase.from('items').insert(snapshot);
+          if (insErr) {
+            console.error(insErr);
+            alert('Rückgängig war nicht möglich.');
+            return;
+          }
+        },
+      });
     }
   };
 
@@ -297,11 +334,22 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
 
   const handleDragEnd = async (result: DropResult) => {
     if (!result.destination || result.source.index === result.destination.index) return;
+    const prevItems = [...items];
     const arr = [...items];
     const [it] = arr.splice(result.source.index, 1);
     arr.splice(result.destination.index, 0, it);
     setItems(arr);
     for (let i = 0; i < arr.length; i++) await supabase.from('items').update({ item_order: i }).eq('id', arr[i].id);
+    setUndoKey(k => k + 1);
+    setUndoState({
+      message: 'Reihenfolge geändert',
+      onUndo: async () => {
+        setItems(prevItems);
+        for (let i = 0; i < prevItems.length; i++) {
+          await supabase.from('items').update({ item_order: i }).eq('id', prevItems[i].id);
+        }
+      },
+    });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -802,45 +850,42 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                   {(provided, snapshot) => {
                                     const isSelected = selectedItemId === item.id;
                                     return (
-                                    <motion.div
+                                    <div
                                       ref={provided.innerRef}
-                                      {...(provided.draggableProps as any)}
-                                      custom={index}
-                                      variants={itemVariants}
-                                      initial="hidden"
-                                      animate="visible"
-                                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                                      layout="position"
-                                      layoutId={`timeline-item-${item.id}`}
-                                      transition={{ layout: { type: 'spring', stiffness: 300, damping: 25, mass: 0.8 } }}
-                                      whileHover={{ scale: 1.01 }}
+                                      {...provided.draggableProps}
                                       style={{
                                         ...provided.draggableProps.style,
-                                        opacity: snapshot.isDragging ? 0.9 : 1,
                                         zIndex: snapshot.isDragging ? 50 : 'auto',
-                                        boxShadow: snapshot.isDragging ? '0 8px 32px rgba(0,0,0,0.12)' : undefined,
                                       }}
-                                      onClick={() => setSelectedItemId(isSelected ? null : item.id)}
-                                      className={
-                                        'glass-card p-2.5 sm:p-3 cursor-pointer group transition-all duration-200 ' +
-                                        (snapshot.isDragging ? 'ring-2 ring-primary/30 scale-[1.02] ' : '') +
-                                        (isSelected ? 'ring-2 ring-primary/20 ' : '') +
-                                        (titleIsTbd
-                                          ? 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/45 dark:bg-orange-950/30'
-                                          : '')
-                                      }
                                     >
-                                      <div className="flex gap-2 sm:gap-2.5">
-                                        {/* Drag handle – visible on hover (desktop) or when selected (mobile) */}
-                                        <div
-                                          {...(provided.dragHandleProps as any)}
-                                          className={
-                                            'flex items-center touch-none select-none text-muted-foreground/40 hover:text-muted-foreground transition-opacity -ml-1 ' +
-                                            (isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')
-                                          }
-                                        >
-                                          <GripVertical className="h-4 w-4" />
-                                        </div>
+                                      <motion.div
+                                        custom={index}
+                                        variants={itemVariants}
+                                        initial="hidden"
+                                        animate={["visible", snapshot.isDragging ? "dragging" : isSelected ? "selected" : ""]}
+                                        exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                                        layout="position"
+                                        layoutId={`timeline-item-${item.id}`}
+                                        transition={{ layout: { type: 'spring', stiffness: 350, damping: 30, mass: 0.8 } }}
+                                        onClick={() => setSelectedItemId(isSelected ? null : item.id)}
+                                        className={
+                                          'glass-card p-2.5 sm:p-3 cursor-pointer group transition-colors transition-shadow ' +
+                                          (titleIsTbd
+                                            ? 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/45 dark:bg-orange-950/30'
+                                            : '')
+                                        }
+                                      >
+                                        <div className="flex gap-2 sm:gap-2.5">
+                                          {/* Drag handle – visible on hover (desktop) or when selected (mobile) */}
+                                          <div
+                                            {...(provided.dragHandleProps as any)}
+                                            className={
+                                              'flex items-center touch-none select-none text-muted-foreground/40 hover:text-muted-foreground transition-opacity -ml-1 ' +
+                                              (isSelected || snapshot.isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')
+                                            }
+                                          >
+                                            <GripVertical className="h-4 w-4" />
+                                          </div>
                                         <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 icon-${item.type}`}>
                                           <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                         </div>
@@ -979,6 +1024,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                         </div>
                                       </div>
                                     </motion.div>
+                                    </div>
                                   ); }}
                                 </Draggable>
                               </React.Fragment>
@@ -1053,18 +1099,23 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                           {todos.map((todo, index) => (
                             <Draggable key={todo.id} draggableId={todo.id} index={index}>
                               {(provided, snapshot) => (
-                                <motion.div
+                                <div
                                   ref={provided.innerRef}
-                                  {...(provided.draggableProps as any)}
+                                  {...provided.draggableProps}
+                                  style={{
+                                    ...provided.draggableProps.style,
+                                    zIndex: snapshot.isDragging ? 50 : 'auto',
+                                  }}
+                                >
+                                <motion.div
                                   custom={index}
                                   variants={todoVariants}
                                   initial="hidden"
-                                  animate="visible"
+                                  animate={["visible", snapshot.isDragging ? "dragging" : ""]}
                                   exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
                                   layout
-                                  layoutTransition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                                  style={{ ...provided.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
-                                  className="glass-card flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 group"
+                                  transition={{ layout: { type: 'spring', stiffness: 400, damping: 30 } }}
+                                  className="glass-card flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 group transition-colors transition-shadow"
                                 >
                                   <div {...provided.dragHandleProps} className="text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing transition-colors">
                                     <GripVertical className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -1118,6 +1169,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </motion.button>
                                 </motion.div>
+                                </div>
                               )}
                             </Draggable>
                           ))}
@@ -1179,6 +1231,17 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
           <Map items={items} selectedItemId={selectedItemId} onSelectItem={setSelectedItemId} transportRoutes={transportRoutes} />
         </div>
       </div>
+
+      <UndoSnackbar
+        variant="aboveMobileTabs"
+        open={undoState !== null}
+        undoKey={undoKey}
+        message={undoState?.message ?? ''}
+        onUndo={async () => {
+          if (undoState) await undoState.onUndo();
+        }}
+        onDismiss={dismissUndo}
+      />
     </div>
   );
 }

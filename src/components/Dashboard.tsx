@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
-import { supabase, Trip } from '../lib/supabase';
+import { supabase, Trip, TripItem, Todo } from '../lib/supabase';
 import { useAuth } from './AuthProvider';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogClose } from './ui/dialog';
+import { UndoSnackbar } from './UndoSnackbar';
 import { format, isSameDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import {
@@ -72,6 +73,9 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newTripTitle, setNewTripTitle] = useState('');
   const [isLoaded, setIsLoaded] = useState(false);
+  const [undoKey, setUndoKey] = useState(0);
+  const [undoState, setUndoState] = useState<{ message: string; onUndo: () => Promise<void> } | null>(null);
+  const dismissUndo = useCallback(() => setUndoState(null), []);
 
   const fetchTrips = useCallback(async () => {
     const { data, error } = await supabase
@@ -152,13 +156,61 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
   };
 
   const handleDeleteTrip = async (tripId: string) => {
+    const { data: snapshot, error: fetchErr } = await supabase
+      .from('trips')
+      .select('*, items(*), todos(*)')
+      .eq('id', tripId)
+      .single();
+
+    if (fetchErr || !snapshot) {
+      console.error('Error loading trip for delete:', fetchErr);
+      alert('Fehler beim Laden der Reise');
+      return;
+    }
+
+    const snap = snapshot as Trip & { items?: TripItem[]; todos?: Todo[] };
+    const snapItems = snap.items ?? [];
+    const snapTodos = snap.todos ?? [];
+    const { items: _items, todos: _todos, ...tripRow } = snap;
+
     const { error } = await supabase.from('trips').delete().eq('id', tripId);
     if (error) {
       console.error('Error deleting trip:', error);
       alert('Fehler beim Löschen der Reise');
-    } else {
-      setTrips(p => p.filter(t => t.id !== tripId));
+      return;
     }
+    setTrips(p => p.filter(t => t.id !== tripId));
+    setUndoKey(k => k + 1);
+    setUndoState({
+      message: `„${snap.title}“ gelöscht`,
+      onUndo: async () => {
+        const { error: tripErr } = await supabase.from('trips').insert(tripRow);
+        if (tripErr) {
+          console.error(tripErr);
+          alert('Rückgängig war nicht möglich.');
+          return;
+        }
+        if (snapItems.length) {
+          const { error: itemsErr } = await supabase.from('items').insert(snapItems);
+          if (itemsErr) {
+            console.error(itemsErr);
+            alert('Reise wiederhergestellt, Timeline-Einträge konnten nicht alle wiederhergestellt werden.');
+            await fetchTrips();
+            return;
+          }
+        }
+        if (snapTodos.length) {
+          const { error: todosErr } = await supabase.from('todos').insert(snapTodos);
+          if (todosErr) {
+            console.error(todosErr);
+            alert('Reise wiederhergestellt, To-Dos konnten nicht alle wiederhergestellt werden.');
+            await fetchTrips();
+            return;
+          }
+        }
+        await fetchTrips();
+      },
+    });
   };
 
   const getTripDates = (trip: Trip) => {
@@ -355,17 +407,24 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
                           <DialogHeader>
                             <DialogTitle className="text-sm sm:text-base">Reise löschen?</DialogTitle>
                             <DialogDescription>
-                              Dies kann nicht rückgängig gemacht werden. Alle Pläne und To-Dos gehen verloren.
+                              Alle Pläne und To-Dos werden entfernt. Du kannst die Aktion unten rechts kurz rückgängig machen.
                             </DialogDescription>
                           </DialogHeader>
                           <div className="flex gap-3 mt-4">
                             <DialogTrigger render={
                               <button className="flex-1 py-2 px-4 rounded-xl text-sm font-medium border border-border">Abbrechen</button>
                             } />
-                            <button
-                              onClick={() => handleDeleteTrip(trip.id)}
-                              className="flex-1 py-2 px-4 rounded-xl text-sm font-medium bg-destructive text-white"
-                            >Löschen</button>
+                            <DialogClose
+                              render={
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteTrip(trip.id)}
+                                  className="flex-1 py-2 px-4 rounded-xl text-sm font-medium bg-destructive text-white"
+                                />
+                              }
+                            >
+                              Löschen
+                            </DialogClose>
                           </div>
                         </DialogContent>
                       </Dialog>
@@ -434,6 +493,16 @@ export function Dashboard({ onSelectTrip }: { onSelectTrip: (tripId: string) => 
           </motion.div>
         )}
       </AnimatePresence>
+
+      <UndoSnackbar
+        open={undoState !== null}
+        undoKey={undoKey}
+        message={undoState?.message ?? ''}
+        onUndo={async () => {
+          if (undoState) await undoState.onUndo();
+        }}
+        onDismiss={dismissUndo}
+      />
     </div>
   );
 }
