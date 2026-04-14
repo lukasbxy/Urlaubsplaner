@@ -876,7 +876,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                           <AnimatePresence initial={false}>
                           {processedItems.map((item, index) => {
                             const Icon = typeIcons[item.type] || MapPin;
-                            const titleIsTbd = item.title.toLowerCase().includes('tbd');
+                            const titleIsTbd = /tbd/i.test(item.title);
                             const dayLabel = getDayLabel(item as TripItem, index > 0 ? processedItems[index - 1] as TripItem : null);
                             return (
                               <React.Fragment key={item.id}>
@@ -917,7 +917,7 @@ export function TripView({ tripId, onBack }: { tripId: string; onBack: () => voi
                                         className={
                                           'glass-card p-2.5 sm:p-3 cursor-pointer group transition-colors transition-shadow ' +
                                           (titleIsTbd
-                                            ? 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/45 dark:bg-orange-950/30'
+                                            ? '!border-orange-200/95 !bg-orange-50/95 ring-1 ring-orange-200/40 dark:!border-orange-800/60 dark:!bg-orange-950/45 dark:ring-orange-800/35'
                                             : '')
                                         }
                                       >
